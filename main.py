@@ -1,6 +1,7 @@
 import random
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -242,6 +243,7 @@ def _run(
     scale: int | None,
     prevent_sleep: bool,
 ) -> None:
+    run_start = time.perf_counter()
     song_names: dict[Path, str] = {path: path.stem for path in song_files}
     if identify:
         api_key = get_api_key()
@@ -345,6 +347,7 @@ def _run(
         segment_count=len(segments),
         encoder=encoder,
         label_mode=labels,
+        elapsed=time.perf_counter() - run_start,
     )
 
 

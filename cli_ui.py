@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sys
+import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -164,12 +166,14 @@ def print_done(
     segment_count: int,
     encoder: str,
     label_mode: str,
+    elapsed: float,
 ) -> None:
     console.print()
     console.print(
         Panel(
             f"[bold green]✓[/bold green]  [bold]{output}[/bold]\n\n"
-            f"[dim]{segment_count} segments · {encoder} · {label_mode}[/dim]",
+            f"[dim]{segment_count} segments · {encoder} · {label_mode} · "
+            f"elapsed {format_duration(elapsed)}[/dim]",
             title="Finished",
             border_style="green",
             padding=(1, 2),
@@ -195,5 +199,27 @@ def note_png_fallback() -> None:
 
 @contextmanager
 def task(description: str) -> Iterator[None]:
-    with console.status(f"[bold]{description}[/]", spinner="dots12"):
-        yield
+    start = time.perf_counter()
+    stop = threading.Event()
+
+    def tick() -> None:
+        while not stop.wait(1.0):
+            elapsed = time.perf_counter() - start
+            status.update(
+                f"[bold]{description}[/] [dim]· {format_duration(elapsed)}[/dim]"
+            )
+
+    with console.status(f"[bold]{description}[/]", spinner="dots12") as status:
+        thread = threading.Thread(target=tick, daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            thread.join(timeout=2.0)
+
+    elapsed = time.perf_counter() - start
+    label = description.rstrip("…")
+    console.print(
+        f"[green]✓[/green] [dim]{label} · {format_duration(elapsed)}[/dim]"
+    )
