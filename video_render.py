@@ -201,6 +201,7 @@ def _render_with_drawtext(
     use_hw: bool,
     preset: str,
     crf: int,
+    quiet: bool,
 ) -> None:
     cmd = [
         ffmpeg_binary(),
@@ -219,7 +220,7 @@ def _render_with_drawtext(
     ]
     _append_video_encoder(cmd, use_hw=use_hw, preset=preset, crf=crf)
     cmd.extend(["-c:a", "aac", "-b:a", "192k", ffmpeg_escape_filename(str(output_path))])
-    subprocess_call(cmd, logger="bar")
+    subprocess_call(cmd, logger=None if quiet else "bar")
 
 
 def _render_with_png_overlays(
@@ -232,6 +233,7 @@ def _render_with_png_overlays(
     use_hw: bool,
     preset: str,
     crf: int,
+    quiet: bool,
 ) -> None:
     font_size = max(24, video_height // 28)
     margin = max(12, video_height // 48)
@@ -273,7 +275,7 @@ def _render_with_png_overlays(
         )
         _append_video_encoder(cmd, use_hw=use_hw, preset=preset, crf=crf)
         cmd.extend(["-c:a", "aac", "-b:a", "192k", ffmpeg_escape_filename(str(output_path))])
-        subprocess_call(cmd, logger="bar")
+        subprocess_call(cmd, logger=None if quiet else "bar")
 
 
 def render_video_with_overlays(
@@ -285,6 +287,7 @@ def render_video_with_overlays(
     preset: str = "veryfast",
     crf: int = 20,
     hw_encode: bool | None = None,
+    quiet: bool = False,
 ) -> None:
     """Mux audio and burn song titles using a single FFmpeg encode pass."""
     use_hw = hw_encode if hw_encode is not None else sys.platform == "darwin"
@@ -300,12 +303,9 @@ def render_video_with_overlays(
             use_hw=use_hw,
             preset=preset,
             crf=crf,
+            quiet=quiet,
         )
     else:
-        print(
-            "ffmpeg has no drawtext filter; rendering labels with PNG overlays.",
-            file=sys.stderr,
-        )
         _render_with_png_overlays(
             video_path,
             audio_path,
@@ -315,4 +315,5 @@ def render_video_with_overlays(
             use_hw=use_hw,
             preset=preset,
             crf=crf,
+            quiet=quiet,
         )

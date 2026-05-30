@@ -181,7 +181,8 @@ Or use `--no-identify`.
 
 | Path | Description |
 |------|-------------|
-| `main.py` | CLI: playlist build and orchestration |
+| `main.py` | CLI entry point |
+| `cli_ui.py` | Rich terminal UI (tables, progress, panels) |
 | `video_render.py` | FFmpeg encode, `drawtext` / PNG overlay |
 | `acoustid_lookup.py` | AcoustID client and `.acoustid` cache |
 | `.acoustid/` | Cached identification results (gitignored) |

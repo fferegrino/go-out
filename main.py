@@ -7,10 +7,27 @@ from pathlib import Path
 import typer
 from moviepy import AudioFileClip, VideoFileClip, afx, concatenate_audioclips
 
-from acoustid_lookup import format_song_name, get_api_key, identify_songs
+from acoustid_lookup import SongMatch, format_song_name, get_api_key, identify_songs
+from cli_ui import (
+    console,
+    label_mode_name,
+    note_png_fallback,
+    print_banner,
+    print_done,
+    print_identification_results,
+    print_playlist,
+    print_run_summary,
+    task,
+)
 from video_render import render_video_with_overlays
 
-app = typer.Typer()
+app = typer.Typer(
+    name="go-out",
+    help="Mix a randomised soundtrack into a video with on-screen track titles.",
+    rich_markup_mode="rich",
+    no_args_is_help=True,
+    pretty_exceptions_enable=True,
+)
 
 ENCODE_PRESETS = ("ultrafast", "veryfast", "fast", "medium", "slow")
 
@@ -45,7 +62,6 @@ def build_playlist(
         clip = AudioFileClip(str(song_path))
         index += 1
         label = song_names.get(song_path, song_path.name)
-        typer.echo(f"  + {label}")
         if normalize:
             clip = clip.with_effects([afx.AudioNormalize()])
 
@@ -64,46 +80,64 @@ def build_playlist(
 
 @app.command()
 def main(
-    video: Path = typer.Argument(..., exists=True, help="Input video file"),
+    video: Path = typer.Argument(
+        ...,
+        exists=True,
+        help="Input video file",
+        rich_help_panel="Inputs",
+    ),
     songs: Path = typer.Argument(
         ...,
         exists=True,
         file_okay=False,
         dir_okay=True,
-        help="Folder containing song .mp4 files",
+        help="Folder of song .mp4 files",
+        rich_help_panel="Inputs",
     ),
     output: Path | None = typer.Option(
-        None, "--output", "-o", help="Output video path"
+        None,
+        "--output",
+        "-o",
+        help="Output video path",
+        rich_help_panel="Output",
     ),
     seed: int | None = typer.Option(
-        None, help="Random seed for reproducible song order"
+        None,
+        help="Random seed for reproducible song order",
+        rich_help_panel="Playlist",
     ),
     normalize: bool = typer.Option(
         False,
         "--normalize/--no-normalize",
         help="Peak-normalise each song so the loudest sample is at 0 dB",
+        rich_help_panel="Playlist",
     ),
     identify: bool = typer.Option(
         True,
         "--identify/--no-identify",
-        help="Identify songs via AcoustID (uses ACOUSTID_API_KEY and .acoustid cache)",
+        help="Identify songs via AcoustID (uses ACOUSTID_API_KEY)",
+        rich_help_panel="Playlist",
     ),
     preset: str = typer.Option(
         "veryfast",
-        help=f"x264 preset when not using hardware encode ({', '.join(ENCODE_PRESETS)})",
+        help=f"x264 preset ({', '.join(ENCODE_PRESETS)})",
+        rich_help_panel="Encoding",
     ),
     crf: int = typer.Option(
         20,
         min=0,
         max=51,
-        help="x264 quality (lower = better, slower). Ignored with --hw-encode.",
+        help="x264 quality; lower is better. Ignored with --hw-encode.",
+        rich_help_panel="Encoding",
     ),
     hw_encode: bool | None = typer.Option(
         None,
         "--hw-encode/--no-hw-encode",
-        help="Hardware H.264 via VideoToolbox (default: on for macOS, off otherwise)",
+        help="Hardware H.264 via VideoToolbox (default: on on macOS)",
+        rich_help_panel="Encoding",
     ),
-):
+) -> None:
+    """Build a video with a shuffled soundtrack and timed on-screen song titles."""
     if seed is not None:
         random.seed(seed)
 
@@ -114,51 +148,76 @@ def main(
     if not song_files:
         raise typer.BadParameter(f"No .mp4 files found in {songs}")
 
+    print_banner()
+    console.print()
+
     song_names: dict[Path, str] = {path: path.stem for path in song_files}
     if identify:
         api_key = get_api_key()
-        typer.echo("Identifying songs (cached in .acoustid/)...")
-        matches = identify_songs(song_files, api_key)
+        with task("Identifying songs (AcoustID)…"):
+            matches = identify_songs(song_files, api_key)
+        id_rows: list[tuple[str, str, SongMatch]] = []
         for path, match in matches.items():
             song_names[path] = format_song_name(match, path)
-            typer.echo(f"  {path.name} → {song_names[path]}")
+            id_rows.append((path.name, song_names[path], match))
+        print_identification_results(id_rows)
+        console.print()
 
     output_path = output or video.with_name(f"{video.stem}_mixed{video.suffix}")
-
-    typer.echo(f"Loading video: {video}")
-    with VideoFileClip(str(video)) as video_clip:
-        target_duration = video_clip.duration
-
-    typer.echo(f"Video duration: {target_duration:.2f}s")
-    typer.echo(f"Found {len(song_files)} songs, randomising order...")
-
-    playlist, source_clips, segments = build_playlist(
-        song_files,
-        target_duration,
-        normalize=normalize,
-        song_names=song_names,
-    )
-    tmp_audio: Path | None = None
     use_hw = hw_encode if hw_encode is not None else sys.platform == "darwin"
+    encoder = "VideoToolbox" if use_hw else f"x264 · {preset} · crf {crf}"
+    labels = label_mode_name()
+    note_png_fallback()
 
+    with task("Reading video…"):
+        with VideoFileClip(str(video)) as video_clip:
+            target_duration = video_clip.duration
+
+    print_run_summary(
+        video=video,
+        songs_dir=songs,
+        output=output_path,
+        video_duration=target_duration,
+        song_count=len(song_files),
+        seed=seed,
+        normalize=normalize,
+        identify=identify,
+        encoder=encoder,
+        label_mode=labels,
+    )
+    console.print()
+
+    with task("Building playlist…"):
+        playlist, source_clips, segments = build_playlist(
+            song_files,
+            target_duration,
+            normalize=normalize,
+            song_names=song_names,
+        )
+
+    segment_rows = [(s.label, s.duration) for s in segments]
+    print_playlist(segment_rows)
+    console.print()
+
+    tmp_audio: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp:
             tmp_audio = Path(tmp.name)
 
-        typer.echo("Writing playlist audio...")
-        playlist.write_audiofile(str(tmp_audio), codec="aac", logger="bar")
+        with task("Writing playlist audio…"):
+            playlist.write_audiofile(str(tmp_audio), codec="aac", logger=None)
 
-        encoder = "VideoToolbox" if use_hw else f"x264/{preset}"
-        typer.echo(f"Rendering {output_path} ({encoder})...")
-        render_video_with_overlays(
-            video,
-            tmp_audio,
-            [(s.label, s.duration) for s in segments],
-            output_path,
-            preset=preset,
-            crf=crf,
-            hw_encode=hw_encode,
-        )
+        with task(f"Rendering video ({encoder})…"):
+            render_video_with_overlays(
+                video,
+                tmp_audio,
+                segment_rows,
+                output_path,
+                preset=preset,
+                crf=crf,
+                hw_encode=hw_encode,
+                quiet=True,
+            )
     finally:
         playlist.close()
         for clip in source_clips:
@@ -166,7 +225,12 @@ def main(
         if tmp_audio is not None and tmp_audio.exists():
             tmp_audio.unlink()
 
-    typer.echo("Done!")
+    print_done(
+        output_path,
+        segment_count=len(segments),
+        encoder=encoder,
+        label_mode=labels,
+    )
 
 
 if __name__ == "__main__":
