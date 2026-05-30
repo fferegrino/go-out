@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 
 import typer
-from moviepy import AudioFileClip, VideoFileClip, concatenate_audioclips
+from moviepy import AudioFileClip, VideoFileClip, afx, concatenate_audioclips
 from moviepy.config import FFMPEG_BINARY
 from moviepy.tools import ffmpeg_escape_filename, subprocess_call
 
@@ -11,7 +11,10 @@ app = typer.Typer()
 
 
 def build_playlist(
-    song_files: list[Path], target_duration: float
+    song_files: list[Path],
+    target_duration: float,
+    *,
+    normalize: bool = False,
 ) -> tuple[AudioFileClip, list[AudioFileClip]]:
     """Shuffle songs and collect clips whose total duration matches the target."""
     playlist = song_files.copy()
@@ -27,6 +30,8 @@ def build_playlist(
 
         clip = AudioFileClip(str(playlist[index % len(playlist)]))
         index += 1
+        if normalize:
+            clip = clip.with_effects([afx.AudioNormalize()])
 
         if clip.duration <= remaining:
             clips.append(clip)
@@ -77,6 +82,11 @@ def main(
     seed: int | None = typer.Option(
         None, help="Random seed for reproducible song order"
     ),
+    normalize: bool = typer.Option(
+        False,
+        "--normalize/--no-normalize",
+        help="Peak-normalise each song so the loudest sample is at 0 dB",
+    ),
 ):
     if seed is not None:
         random.seed(seed)
@@ -94,7 +104,9 @@ def main(
     typer.echo(f"Video duration: {target_duration:.2f}s")
     typer.echo(f"Found {len(song_files)} songs, randomising order...")
 
-    playlist, source_clips = build_playlist(song_files, target_duration)
+    playlist, source_clips = build_playlist(
+        song_files, target_duration, normalize=normalize
+    )
     tmp_audio: Path | None = None
 
     try:
