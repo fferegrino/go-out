@@ -7,6 +7,8 @@ from moviepy import AudioFileClip, VideoFileClip, afx, concatenate_audioclips
 from moviepy.config import FFMPEG_BINARY
 from moviepy.tools import ffmpeg_escape_filename, subprocess_call
 
+from acoustid_lookup import format_song_name, get_api_key, identify_songs
+
 app = typer.Typer()
 
 
@@ -15,6 +17,7 @@ def build_playlist(
     target_duration: float,
     *,
     normalize: bool = False,
+    song_names: dict[Path, str] | None = None,
 ) -> tuple[AudioFileClip, list[AudioFileClip]]:
     """Shuffle songs and collect clips whose total duration matches the target."""
     playlist = song_files.copy()
@@ -28,8 +31,11 @@ def build_playlist(
         if index > 0 and index % len(playlist) == 0:
             random.shuffle(playlist)
 
-        clip = AudioFileClip(str(playlist[index % len(playlist)]))
+        song_path = playlist[index % len(playlist)]
+        clip = AudioFileClip(str(song_path))
         index += 1
+        if song_names is not None:
+            typer.echo(f"  + {song_names.get(song_path, song_path.name)}")
         if normalize:
             clip = clip.with_effects([afx.AudioNormalize()])
 
@@ -87,6 +93,11 @@ def main(
         "--normalize/--no-normalize",
         help="Peak-normalise each song so the loudest sample is at 0 dB",
     ),
+    identify: bool = typer.Option(
+        True,
+        "--identify/--no-identify",
+        help="Identify songs via AcoustID (uses ACOUSTID_API_KEY and .acoustid cache)",
+    ),
 ):
     if seed is not None:
         random.seed(seed)
@@ -94,6 +105,15 @@ def main(
     song_files = sorted(songs.glob("*.mp4"))
     if not song_files:
         raise typer.BadParameter(f"No .mp4 files found in {songs}")
+
+    song_names: dict[Path, str] = {path: path.name for path in song_files}
+    if identify:
+        api_key = get_api_key()
+        typer.echo("Identifying songs (cached in .acoustid/)...")
+        matches = identify_songs(song_files, api_key)
+        for path, match in matches.items():
+            song_names[path] = format_song_name(match, path)
+            typer.echo(f"  {path.name} → {song_names[path]}")
 
     output_path = output or video.with_name(f"{video.stem}_mixed{video.suffix}")
 
@@ -105,7 +125,10 @@ def main(
     typer.echo(f"Found {len(song_files)} songs, randomising order...")
 
     playlist, source_clips = build_playlist(
-        song_files, target_duration, normalize=normalize
+        song_files,
+        target_duration,
+        normalize=normalize,
+        song_names=song_names if identify else None,
     )
     tmp_audio: Path | None = None
 
