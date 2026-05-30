@@ -19,7 +19,7 @@ from cli_ui import (
     print_run_summary,
     task,
 )
-from video_render import render_video_with_overlays
+from video_render import render_video_with_overlays, set_ffmpeg_binaries
 
 app = typer.Typer(
     name="go-out",
@@ -136,8 +136,18 @@ def main(
         help="Hardware H.264 via VideoToolbox (default: on on macOS)",
         rich_help_panel="Encoding",
     ),
+    ffmpeg_bin: Path | None = typer.Option(
+        None,
+        "--ffmpeg",
+        help="Path to ffmpeg binary (or set FFMPEG_BINARY)",
+        rich_help_panel="Encoding",
+    ),
 ) -> None:
     """Build a video with a shuffled soundtrack and timed on-screen song titles."""
+    if ffmpeg_bin is not None and not ffmpeg_bin.is_file():
+        raise typer.BadParameter(f"ffmpeg binary not found: {ffmpeg_bin}")
+
+    set_ffmpeg_binaries(ffmpeg=ffmpeg_bin)
     if seed is not None:
         random.seed(seed)
 

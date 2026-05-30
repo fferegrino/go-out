@@ -50,12 +50,24 @@ uv sync
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ACOUSTID_API_KEY` | When using `--identify` (default) | API key from [acoustid.org](https://acoustid.org/new-application) |
+| `FFMPEG_BINARY` | No | Path to `ffmpeg` (e.g. Homebrew `ffmpeg-full`; see below) |
+| `FFPROBE_BINARY` | No | Path to `ffprobe` (defaults to `ffprobe` beside `FFMPEG_BINARY`) |
 
 Export in your shell before running (the app does **not** read `.env` files):
 
 ```bash
 export ACOUSTID_API_KEY=your_api_key_here
+export FFMPEG_BINARY="$(brew --prefix ffmpeg-full)/bin/ffmpeg"
 ```
+
+Or pass `--ffmpeg` on the command line:
+
+```bash
+uv run python main.py video.mp4 ./songs \
+  --ffmpeg /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg
+```
+
+`ffprobe` is picked up automatically from the same directory unless you set `FFPROBE_BINARY`.
 
 ## AcoustID (song identification)
 
@@ -97,6 +109,7 @@ uv run python main.py VIDEO SONGS_DIR [OPTIONS]
 | `--preset TEXT` | x264 preset when not using hardware encode: `ultrafast`, `veryfast`, `fast`, `medium`, `slow` (default: `veryfast`) |
 | `--crf INTEGER` | x264 quality 0–51; lower is better (default: `20`). Ignored with `--hw-encode`. |
 | `--hw-encode` / `--no-hw-encode` | H.264 via VideoToolbox (default: **on** on macOS, **off** elsewhere) |
+| `--ffmpeg PATH` | Path to `ffmpeg` (alternative to `FFMPEG_BINARY`) |
 
 **Examples**
 

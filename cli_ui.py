@@ -13,7 +13,7 @@ from rich.table import Table
 from rich.text import Text
 
 from acoustid_lookup import SongMatch
-from video_render import has_drawtext_filter
+from video_render import ffmpeg_binary, has_drawtext_filter
 
 console = Console()
 err_console = Console(stderr=True)
@@ -67,6 +67,7 @@ def print_run_summary(
     table.add_row("Songs", f"{songs_dir} [dim]({song_count} tracks)[/dim]")
     table.add_row("Output", str(output))
     table.add_row("Duration", format_duration(video_duration))
+    table.add_row("FFmpeg", ffmpeg_binary())
     table.add_row("Encoder", encoder)
     table.add_row("Labels", label_mode)
     table.add_row("Identify", "on" if identify else "off")
