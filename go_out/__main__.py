@@ -2,19 +2,11 @@
 
 from __future__ import annotations
 
-import sys
+from go_out.cli import app
 
 
 def main() -> None:
-    if len(sys.argv) > 1 and sys.argv[1] == "probe":
-        from go_out.probe_cli import app as probe_app
-
-        sys.argv.pop(1)
-        probe_app()
-    else:
-        from go_out.cli import app
-
-        app()
+    app()
 
 
 if __name__ == "__main__":

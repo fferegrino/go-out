@@ -11,24 +11,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from moviepy.tools import ffmpeg_escape_filename, subprocess_call
 
-from go_out.ffmpeg import ffmpeg_binary, ffprobe_binary, set_ffmpeg_binaries as _set_ffmpeg_binaries
-from go_out.media import probe_video_size, resolve_video_bitrate
-
-__all__ = [
-    "ffmpeg_binary",
-    "ffprobe_binary",
-    "format_ffmpeg_bitrate",
-    "has_drawtext_filter",
-    "has_subtitles_filter",
-    "label_render_mode",
-    "probe_video_height",
-    "probe_video_size",
-    "render_video_with_overlays",
-    "resolve_video_bitrate",
-    "set_ffmpeg_binaries",
-]
-
-from go_out.media import format_ffmpeg_bitrate  # re-export for callers
+from go_out.media import ffmpeg_binary, probe_video_size, set_ffmpeg_binaries as _set_ffmpeg_binaries
 
 
 def set_ffmpeg_binaries(
@@ -61,10 +44,6 @@ def has_drawtext_filter() -> bool:
 @lru_cache(maxsize=1)
 def has_subtitles_filter() -> bool:
     return " subtitles " in f" {_ffmpeg_filters()} "
-
-
-def probe_video_height(path: Path) -> int:
-    return probe_video_size(path)[1]
 
 
 def label_render_mode() -> str:

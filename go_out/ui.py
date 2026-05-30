@@ -17,9 +17,8 @@ from rich.text import Text
 
 from go_out.acoustid import SongMatch
 from go_out.audio import DEFAULT_TARGET_LUFS
-from go_out.ffmpeg import ffprobe_binary
-from go_out.media import VideoProbe, format_file_size, format_human_bitrate
-from go_out.render import ffmpeg_binary, label_render_mode
+from go_out.media import VideoProbe, ffmpeg_binary, ffprobe_binary, format_file_size, format_human_bitrate
+from go_out.render import label_render_mode
 
 console = Console()
 err_console = Console(stderr=True)

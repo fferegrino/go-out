@@ -1,18 +1,22 @@
+import json
 import random
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 import typer
 from moviepy import AudioFileClip, VideoFileClip, concatenate_audioclips
 
 from go_out.acoustid import SongMatch, format_song_name, get_api_key, identify_songs
 from go_out.audio import DEFAULT_TARGET_LUFS, NormalizeMode, normalize_clip
-from go_out.media import resolve_video_bitrate
+from go_out.media import VideoProbe, probe_video, resolve_video_bitrate
 from go_out.render import render_video_with_overlays, set_ffmpeg_binaries
-from go_out.sleep import default_prevent_sleep, prevent_system_sleep
 from go_out.ui import (
     console,
     label_mode_name,
@@ -21,6 +25,7 @@ from go_out.ui import (
     print_done,
     print_identification_results,
     print_playlist,
+    print_probe_results,
     print_run_summary,
     task,
 )
@@ -33,8 +38,40 @@ app = typer.Typer(
     pretty_exceptions_enable=True,
 )
 
+probe_app = typer.Typer(
+    help="Inspect a video file with ffprobe (codec, bitrate, duration, etc.).",
+    rich_markup_mode="rich",
+    no_args_is_help=True,
+    pretty_exceptions_enable=True,
+)
+app.add_typer(probe_app, name="probe")
+
 ENCODE_PRESETS = ("ultrafast", "veryfast", "fast", "medium", "slow")
 NORMALIZE_MODES = ("loudness", "peak")
+
+
+@contextmanager
+def prevent_system_sleep(enabled: bool = True) -> Iterator[None]:
+    """Prevent idle sleep while the wrapped block runs (macOS ``caffeinate``)."""
+    if not enabled or sys.platform != "darwin":
+        yield
+        return
+
+    caffeinate = shutil.which("caffeinate")
+    if caffeinate is None:
+        yield
+        return
+
+    proc = subprocess.Popen([caffeinate, "-dims"])
+    try:
+        yield
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)
+
+
+def default_prevent_sleep() -> bool:
+    return sys.platform == "darwin"
 
 
 @dataclass(frozen=True)
@@ -426,4 +463,60 @@ def _run(
         label_mode=labels,
         elapsed=time.perf_counter() - run_start,
     )
+
+
+def _probe_to_json(probe: VideoProbe) -> dict:
+    return {
+        "path": str(probe.path),
+        "codec": probe.codec,
+        "width": probe.width,
+        "height": probe.height,
+        "duration": probe.duration,
+        "file_size": probe.file_size,
+        "video_bitrate_bps": probe.video_bitrate_bps,
+        "format_bitrate_bps": probe.format_bitrate_bps,
+        "estimated_video_bitrate_bps": probe.estimated_video_bitrate_bps,
+        "audio_codec": probe.audio_codec,
+        "audio_bitrate_bps": probe.audio_bitrate_bps,
+        "suggested_auto_bitrate": probe.suggested_auto_bitrate,
+    }
+
+
+@probe_app.callback(invoke_without_command=True)
+def probe(
+    ctx: typer.Context,
+    video: Path = typer.Argument(
+        ...,
+        exists=True,
+        help="Video file to inspect",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Print probe results as JSON",
+    ),
+    ffmpeg_bin: Path | None = typer.Option(
+        None,
+        "--ffmpeg",
+        help="Path to ffmpeg binary (ffprobe is resolved beside it)",
+    ),
+) -> None:
+    """Show codec, resolution, duration, and bitrate info for a video file."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    if ffmpeg_bin is not None and not ffmpeg_bin.is_file():
+        raise typer.BadParameter(f"ffmpeg binary not found: {ffmpeg_bin}")
+
+    set_ffmpeg_binaries(ffmpeg=ffmpeg_bin)
+
+    try:
+        result = probe_video(video)
+    except (ValueError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    if json_output:
+        console.print_json(json.dumps(_probe_to_json(result)))
+    else:
+        print_probe_results(result)
 
