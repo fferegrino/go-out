@@ -80,23 +80,38 @@ def print_run_summary(
 
 def print_identification_results(
     rows: list[tuple[str, str, SongMatch]],
+    *,
+    exclude_unmatched: bool = False,
 ) -> None:
     table = Table(
         title="AcoustID",
-        caption="Cached in .acoustid/",
+        caption=(
+            "Unmatched files are excluded from the playlist."
+            if exclude_unmatched
+            else "Cached in .acoustid/"
+        ),
         box=box.SIMPLE_HEAD,
     )
     table.add_column("File", style="dim", no_wrap=True)
     table.add_column("Detected title")
     table.add_column("Match", justify="right", width=8)
+    table.add_column("Status", justify="center", width=10)
 
     for filename, title, match in rows:
-        score = (
-            f"[green]{match.score:.0%}[/]"
-            if match.matched
-            else "[dim]—[/dim]"
-        )
-        table.add_row(filename, title, score)
+        if match.matched:
+            score = f"[green]{match.score:.0%}[/]"
+            status = "[green]included[/green]"
+            display_title = title
+        else:
+            score = "[red]—[/red]" if match.score == 0 else f"[yellow]{match.score:.0%}[/]"
+            status = (
+                "[red]excluded[/red]"
+                if exclude_unmatched
+                else "[yellow]unmatched[/yellow]"
+            )
+            display_title = f"[dim]{filename}[/dim]"
+
+        table.add_row(filename, display_title, score, status)
 
     console.print(table)
 

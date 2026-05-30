@@ -118,6 +118,12 @@ def main(
         help="Identify songs via AcoustID (uses ACOUSTID_API_KEY)",
         rich_help_panel="Playlist",
     ),
+    allow_unmatched: bool = typer.Option(
+        False,
+        "--allow-unmatched",
+        help="Include songs AcoustID could not match (default: exclude them)",
+        rich_help_panel="Playlist",
+    ),
     preset: str = typer.Option(
         "veryfast",
         help=f"x264 preset ({', '.join(ENCODE_PRESETS)})",
@@ -170,8 +176,26 @@ def main(
         for path, match in matches.items():
             song_names[path] = format_song_name(match, path)
             id_rows.append((path.name, song_names[path], match))
-        print_identification_results(id_rows)
+        exclude_unmatched = not allow_unmatched
+        print_identification_results(id_rows, exclude_unmatched=exclude_unmatched)
         console.print()
+
+        if exclude_unmatched:
+            matched_files = [path for path in song_files if matches[path].matched]
+            skipped = len(song_files) - len(matched_files)
+            if skipped:
+                console.print(
+                    f"[yellow]Excluded {skipped} unmatched "
+                    f"{'file' if skipped == 1 else 'files'}[/yellow] "
+                    f"([dim]use --allow-unmatched to include them[/dim])"
+                )
+                console.print()
+            if not matched_files:
+                raise typer.BadParameter(
+                    "No songs matched AcoustID. Fix your library, clear .acoustid/, "
+                    "or pass --allow-unmatched."
+                )
+            song_files = matched_files
 
     output_path = output or video.with_name(f"{video.stem}_mixed{video.suffix}")
     use_hw = hw_encode if hw_encode is not None else sys.platform == "darwin"

@@ -71,7 +71,7 @@ uv run python main.py video.mp4 ./songs \
 
 ## AcoustID (song identification)
 
-By default, each `.mp4` in the songs folder is identified via the [AcoustID](https://acoustid.org/) API. Matched **artist** and **title** are used in the log, on-screen labels, and playlist output.
+By default, each `.mp4` in the songs folder is identified via the [AcoustID](https://acoustid.org/) API. Matched **artist** and **title** are used in the log, on-screen labels, and playlist output. **Unmatched files are excluded** from the playlist unless you pass `--allow-unmatched`.
 
 AcoustID is **free for non-commercial** use. Commercial use requires a license from [AcoustID OÜ](https://acoustid.biz/).
 
@@ -106,6 +106,7 @@ uv run python main.py VIDEO SONGS_DIR [OPTIONS]
 | `--seed INTEGER` | Random seed for the same song order on every run |
 | `--normalize` / `--no-normalize` | Peak-normalise each song before concatenation (default: off) |
 | `--identify` / `--no-identify` | AcoustID names for labels and logs (default: on) |
+| `--allow-unmatched` | Include songs AcoustID could not match (default: **excluded** when identifying) |
 | `--preset TEXT` | x264 preset when not using hardware encode: `ultrafast`, `veryfast`, `fast`, `medium`, `slow` (default: `veryfast`) |
 | `--crf INTEGER` | x264 quality 0–51; lower is better (default: `20`). Ignored with `--hw-encode`. |
 | `--hw-encode` / `--no-hw-encode` | H.264 via VideoToolbox (default: **on** on macOS, **off** elsewhere) |
