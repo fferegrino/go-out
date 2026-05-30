@@ -11,8 +11,8 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from moviepy.tools import ffmpeg_escape_filename, subprocess_call
 
-from ffmpeg_binaries import ffmpeg_binary, ffprobe_binary, set_ffmpeg_binaries as _set_ffmpeg_binaries
-from media_probe import probe_video_size, resolve_video_bitrate
+from go_out.ffmpeg import ffmpeg_binary, ffprobe_binary, set_ffmpeg_binaries as _set_ffmpeg_binaries
+from go_out.media import probe_video_size, resolve_video_bitrate
 
 __all__ = [
     "ffmpeg_binary",
@@ -28,7 +28,7 @@ __all__ = [
     "set_ffmpeg_binaries",
 ]
 
-from media_probe import format_ffmpeg_bitrate  # re-export for callers
+from go_out.media import format_ffmpeg_bitrate  # re-export for callers
 
 
 def set_ffmpeg_binaries(

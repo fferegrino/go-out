@@ -43,6 +43,7 @@ The app uses your **system** FFmpeg (not MoviePy’s bundled copy).
 
 ```bash
 uv sync
+uv run go-out --help
 ```
 
 ## Environment variables
@@ -63,7 +64,7 @@ export FFMPEG_BINARY="$(brew --prefix ffmpeg-full)/bin/ffmpeg"
 Or pass `--ffmpeg` on the command line:
 
 ```bash
-uv run python main.py video.mp4 ./songs \
+uv run go-out video.mp4 ./songs \
   --ffmpeg /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg
 ```
 
@@ -84,13 +85,13 @@ Lookups are stored under `.acoustid/` (gitignored). Each entry is keyed to the f
 Use `--no-identify` if you have no API key, no `fpcalc`, or you only want file stems as labels:
 
 ```bash
-uv run python main.py my-video.mp4 ./songs --no-identify
+uv run go-out my-video.mp4 ./songs --no-identify
 ```
 
 ## Usage
 
 ```bash
-uv run python main.py VIDEO SONGS_DIR [OPTIONS]
+uv run go-out VIDEO SONGS_DIR [OPTIONS]
 ```
 
 A basic run uses these **defaults** (no flags needed):
@@ -133,32 +134,32 @@ To opt out: `--no-identify`, `--no-normalize`, `--target-lufs -16`, or `--bitrat
 
 ```bash
 # Basic run (identify + normalize @ -12 LUFS + --bitrate auto)
-uv run python main.py my-video.mp4 ./songs
+uv run go-out my-video.mp4 ./songs
 
 # Same playlist every time, custom output path
-uv run python main.py my-video.mp4 ./songs --seed 42 -o ~/Movies/output.mp4
+uv run go-out my-video.mp4 ./songs --seed 42 -o ~/Movies/output.mp4
 
 # Drop 5s from the start and 10s from the end
-uv run python main.py my-video.mp4 ./songs --trim-start 5 --trim-end 10
+uv run go-out my-video.mp4 ./songs --trim-start 5 --trim-end 10
 
 # Skip volume matching or use a quieter streaming target
-uv run python main.py my-video.mp4 ./songs --no-normalize
-uv run python main.py my-video.mp4 ./songs --target-lufs -16
+uv run go-out my-video.mp4 ./songs --no-normalize
+uv run go-out my-video.mp4 ./songs --target-lufs -16
 
 # Stricter peak matching (less even perceived loudness)
-uv run python main.py my-video.mp4 ./songs --normalize --normalize-mode peak
+uv run go-out my-video.mp4 ./songs --normalize --normalize-mode peak
 
 # Fastest software encode (Linux or without VideoToolbox)
-uv run python main.py my-video.mp4 ./songs --no-hw-encode --preset ultrafast --crf 23
+uv run go-out my-video.mp4 ./songs --no-hw-encode --preset ultrafast --crf 23
 
 # Quality-based video encode (no bitrate cap; often larger than input)
-uv run python main.py my-video.mp4 ./songs --bitrate off
+uv run go-out my-video.mp4 ./songs --bitrate off
 
 # Cap output size explicitly (good for 1080p; ~600 MB video per 10 minutes at 8M)
-uv run python main.py my-video.mp4 ./songs --bitrate 8M
+uv run go-out my-video.mp4 ./songs --bitrate 8M
 
 # Smaller 4K output: scale down and cap bitrate
-uv run python main.py my-video.mp4 ./songs --scale 1080 --bitrate 6M
+uv run go-out my-video.mp4 ./songs --scale 1080 --bitrate 6M
 ```
 
 ### Volume matching
@@ -215,14 +216,14 @@ Use an explicit cap or disable bitrate targeting:
 Check an input file’s bitrate with the built-in probe command:
 
 ```bash
-uv run python main.py probe INPUT.mp4
-uv run python main.py probe INPUT.mp4 --json
+uv run go-out probe INPUT.mp4
+uv run go-out probe INPUT.mp4 --json
 ```
 
-Or run `probe.py` directly:
+Or run the probe subcommand directly:
 
 ```bash
-uv run python probe.py INPUT.mp4
+uv run go-out probe INPUT.mp4
 ```
 
 The probe output includes a **Suggested --bitrate auto** value you can use when mixing.
@@ -234,7 +235,7 @@ Long encodes can take a while. On macOS, **sleep prevention is on by default** u
 You can also run `caffeinate` yourself around any command:
 
 ```bash
-caffeinate -dims uv run python main.py my-video.mp4 ./songs
+caffeinate -dims uv run go-out my-video.mp4 ./songs
 ```
 
 ## How it works
@@ -289,8 +290,8 @@ Or use `--no-identify`.
 Inspect codec, resolution, duration, and bitrates before mixing:
 
 ```bash
-uv run python main.py probe my-video.mp4
-uv run python main.py probe my-video.mp4 --json
+uv run go-out probe my-video.mp4
+uv run go-out probe my-video.mp4 --json
 ```
 
 Use the same `--ffmpeg` / `FFMPEG_BINARY` settings as the mix command. JSON output is useful for scripts.
@@ -299,11 +300,15 @@ Use the same `--ffmpeg` / `FFMPEG_BINARY` settings as the mix command. JSON outp
 
 | Path | Description |
 |------|-------------|
-| `main.py` | CLI entry point (mix + `probe` subcommand) |
-| `probe.py` | Standalone probe CLI |
-| `cli_ui.py` | Rich terminal UI (tables, progress, panels) |
-| `ffmpeg_binaries.py` | Resolve `ffmpeg` / `ffprobe` paths |
-| `media_probe.py` | ffprobe helpers (`VideoProbe`, bitrate formatting) |
-| `video_render.py` | FFmpeg encode, ASS / drawtext / PNG overlay |
-| `acoustid_lookup.py` | AcoustID client and `.acoustid` cache |
+| `go_out/` | Python package |
+| `go_out/__main__.py` | CLI entry point (`go-out`, `python -m go_out`) |
+| `go_out/cli.py` | Mix command |
+| `go_out/probe_cli.py` | `probe` subcommand |
+| `go_out/ui.py` | Rich terminal UI (tables, progress, panels) |
+| `go_out/ffmpeg.py` | Resolve `ffmpeg` / `ffprobe` paths |
+| `go_out/media.py` | ffprobe helpers (`VideoProbe`, bitrate formatting) |
+| `go_out/render.py` | FFmpeg encode, ASS / drawtext / PNG overlay |
+| `go_out/acoustid.py` | AcoustID client and `.acoustid` cache |
+| `go_out/audio.py` | Per-track volume normalization |
+| `go_out/sleep.py` | macOS sleep prevention (`caffeinate`) |
 | `.acoustid/` | Cached identification results (gitignored) |

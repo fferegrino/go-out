@@ -8,9 +8,9 @@ from pathlib import Path
 
 import typer
 
-from cli_ui import console, print_probe_results
-from media_probe import VideoProbe, probe_video
-from video_render import set_ffmpeg_binaries
+from go_out.media import VideoProbe, probe_video
+from go_out.render import set_ffmpeg_binaries
+from go_out.ui import console, print_probe_results
 
 app = typer.Typer(
     name="probe",
@@ -72,6 +72,3 @@ def main(
     else:
         print_probe_results(probe)
 
-
-if __name__ == "__main__":
-    app()

@@ -8,7 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from ffmpeg_binaries import ffprobe_binary
+from go_out.ffmpeg import ffprobe_binary
 
 
 @dataclass(frozen=True)

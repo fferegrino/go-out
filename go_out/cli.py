@@ -8,9 +8,12 @@ from pathlib import Path
 import typer
 from moviepy import AudioFileClip, VideoFileClip, concatenate_audioclips
 
-from acoustid_lookup import SongMatch, format_song_name, get_api_key, identify_songs
-from audio_normalize import DEFAULT_TARGET_LUFS, NormalizeMode, normalize_clip
-from cli_ui import (
+from go_out.acoustid import SongMatch, format_song_name, get_api_key, identify_songs
+from go_out.audio import DEFAULT_TARGET_LUFS, NormalizeMode, normalize_clip
+from go_out.media import resolve_video_bitrate
+from go_out.render import render_video_with_overlays, set_ffmpeg_binaries
+from go_out.sleep import default_prevent_sleep, prevent_system_sleep
+from go_out.ui import (
     console,
     label_mode_name,
     note_png_fallback,
@@ -21,9 +24,6 @@ from cli_ui import (
     print_run_summary,
     task,
 )
-from prevent_sleep import default_prevent_sleep, prevent_system_sleep
-from media_probe import resolve_video_bitrate
-from video_render import render_video_with_overlays, set_ffmpeg_binaries
 
 app = typer.Typer(
     name="go-out",
@@ -427,12 +427,3 @@ def _run(
         elapsed=time.perf_counter() - run_start,
     )
 
-
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "probe":
-        from probe import app as probe_app
-
-        sys.argv.pop(1)
-        probe_app()
-    else:
-        app()

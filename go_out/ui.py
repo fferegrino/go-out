@@ -15,11 +15,11 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from acoustid_lookup import SongMatch
-from audio_normalize import DEFAULT_TARGET_LUFS
-from ffmpeg_binaries import ffprobe_binary
-from media_probe import VideoProbe, format_file_size, format_human_bitrate
-from video_render import ffmpeg_binary, label_render_mode
+from go_out.acoustid import SongMatch
+from go_out.audio import DEFAULT_TARGET_LUFS
+from go_out.ffmpeg import ffprobe_binary
+from go_out.media import VideoProbe, format_file_size, format_human_bitrate
+from go_out.render import ffmpeg_binary, label_render_mode
 
 console = Console()
 err_console = Console(stderr=True)
