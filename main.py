@@ -1,20 +1,18 @@
 import random
+import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 import typer
-from moviepy import (
-    AudioFileClip,
-    CompositeVideoClip,
-    TextClip,
-    VideoFileClip,
-    afx,
-    concatenate_audioclips,
-)
+from moviepy import AudioFileClip, VideoFileClip, afx, concatenate_audioclips
 
 from acoustid_lookup import format_song_name, get_api_key, identify_songs
+from video_render import render_video_with_overlays
 
 app = typer.Typer()
+
+ENCODE_PRESETS = ("ultrafast", "veryfast", "fast", "medium", "slow")
 
 
 @dataclass(frozen=True)
@@ -64,59 +62,6 @@ def build_playlist(
     return concatenate_audioclips(clips), clips, segments
 
 
-def render_video_with_overlays(
-    video_path: Path,
-    audio: AudioFileClip,
-    segments: list[PlaylistSegment],
-    output_path: Path,
-) -> None:
-    """Burn song titles into the video and attach the playlist audio."""
-    video = VideoFileClip(str(video_path))
-    text_clips: list[TextClip] = []
-    final = None
-
-    try:
-        _, height = video.size
-        font_size = max(24, height // 28)
-        margin = max(12, height // 48)
-
-        start = 0.0
-        for segment in segments:
-            text = TextClip(
-                text=segment.label,
-                font_size=font_size,
-                color="white",
-                stroke_color="black",
-                stroke_width=2,
-                bg_color=(0, 0, 0, 180),
-                method="label",
-            )
-            text = (
-                text.with_duration(segment.duration)
-                .with_start(start)
-                .with_position((margin, margin))
-            )
-            text_clips.append(text)
-            start += segment.duration
-
-        final = CompositeVideoClip([video, *text_clips], use_bgclip=True)
-        final = final.with_duration(video.duration).with_audio(audio)
-        final.write_videofile(
-            str(output_path),
-            codec="libx264",
-            audio_codec="aac",
-            preset="medium",
-            ffmpeg_params=["-crf", "18"],
-            logger="bar",
-        )
-    finally:
-        if final is not None:
-            final.close()
-        for text in text_clips:
-            text.close()
-        video.close()
-
-
 @app.command()
 def main(
     video: Path = typer.Argument(..., exists=True, help="Input video file"),
@@ -143,9 +88,27 @@ def main(
         "--identify/--no-identify",
         help="Identify songs via AcoustID (uses ACOUSTID_API_KEY and .acoustid cache)",
     ),
+    preset: str = typer.Option(
+        "veryfast",
+        help=f"x264 preset when not using hardware encode ({', '.join(ENCODE_PRESETS)})",
+    ),
+    crf: int = typer.Option(
+        20,
+        min=0,
+        max=51,
+        help="x264 quality (lower = better, slower). Ignored with --hw-encode.",
+    ),
+    hw_encode: bool | None = typer.Option(
+        None,
+        "--hw-encode/--no-hw-encode",
+        help="Hardware H.264 via VideoToolbox (default: on for macOS, off otherwise)",
+    ),
 ):
     if seed is not None:
         random.seed(seed)
+
+    if preset not in ENCODE_PRESETS:
+        raise typer.BadParameter(f"preset must be one of: {', '.join(ENCODE_PRESETS)}")
 
     song_files = sorted(songs.glob("*.mp4"))
     if not song_files:
@@ -175,14 +138,33 @@ def main(
         normalize=normalize,
         song_names=song_names,
     )
+    tmp_audio: Path | None = None
+    use_hw = hw_encode if hw_encode is not None else sys.platform == "darwin"
 
     try:
-        typer.echo(f"Rendering {output_path} with song titles...")
-        render_video_with_overlays(video, playlist, segments, output_path)
+        with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp:
+            tmp_audio = Path(tmp.name)
+
+        typer.echo("Writing playlist audio...")
+        playlist.write_audiofile(str(tmp_audio), codec="aac", logger="bar")
+
+        encoder = "VideoToolbox" if use_hw else f"x264/{preset}"
+        typer.echo(f"Rendering {output_path} ({encoder})...")
+        render_video_with_overlays(
+            video,
+            tmp_audio,
+            [(s.label, s.duration) for s in segments],
+            output_path,
+            preset=preset,
+            crf=crf,
+            hw_encode=hw_encode,
+        )
     finally:
         playlist.close()
         for clip in source_clips:
             clip.close()
+        if tmp_audio is not None and tmp_audio.exists():
+            tmp_audio.unlink()
 
     typer.echo("Done!")
 
