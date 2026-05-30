@@ -111,6 +111,7 @@ uv run python main.py VIDEO SONGS_DIR [OPTIONS]
 | `--crf INTEGER` | x264 quality 0–51; lower is better (default: `20`). Ignored with `--hw-encode`. |
 | `--hw-encode` / `--no-hw-encode` | H.264 via VideoToolbox (default: **on** on macOS, **off** elsewhere) |
 | `--ffmpeg PATH` | Path to `ffmpeg` (alternative to `FFMPEG_BINARY`) |
+| `--prevent-sleep` / `--no-prevent-sleep` | Keep macOS awake during processing via `caffeinate` (default: **on** on macOS) |
 
 **Examples**
 
@@ -143,6 +144,16 @@ Title rendering picks the best method your FFmpeg supports:
 On macOS, **VideoToolbox** (`--hw-encode`, default) is usually much faster than software x264. For software encoding, prefer `--preset veryfast` or `ultrafast`; lower `--crf` improves quality but takes longer.
 
 Re-encoding is required to embed titles; the original video stream cannot be copied unchanged.
+
+### Prevent sleep (macOS)
+
+Long encodes can take a while. On macOS, **sleep prevention is on by default** using the built-in `caffeinate` command for the whole run (identify, audio export, and render). Disable with `--no-prevent-sleep`.
+
+You can also run `caffeinate` yourself around any command:
+
+```bash
+caffeinate -dims uv run python main.py my-video.mp4 ./songs
+```
 
 ## How it works
 

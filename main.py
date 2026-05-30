@@ -19,6 +19,7 @@ from cli_ui import (
     print_run_summary,
     task,
 )
+from prevent_sleep import default_prevent_sleep, prevent_system_sleep
 from video_render import render_video_with_overlays, set_ffmpeg_binaries
 
 app = typer.Typer(
@@ -148,6 +149,12 @@ def main(
         help="Path to ffmpeg binary (or set FFMPEG_BINARY)",
         rich_help_panel="Encoding",
     ),
+    prevent_sleep: bool = typer.Option(
+        default_prevent_sleep(),
+        "--prevent-sleep/--no-prevent-sleep",
+        help="Keep the system awake while processing (macOS: caffeinate)",
+        rich_help_panel="Processing",
+    ),
 ) -> None:
     """Build a video with a shuffled soundtrack and timed on-screen song titles."""
     if ffmpeg_bin is not None and not ffmpeg_bin.is_file():
@@ -167,6 +174,38 @@ def main(
     print_banner()
     console.print()
 
+    with prevent_system_sleep(prevent_sleep):
+        _run(
+            video=video,
+            songs=songs,
+            song_files=song_files,
+            output_path=output or video.with_name(f"{video.stem}_mixed{video.suffix}"),
+            seed=seed,
+            normalize=normalize,
+            identify=identify,
+            allow_unmatched=allow_unmatched,
+            preset=preset,
+            crf=crf,
+            hw_encode=hw_encode,
+            prevent_sleep=prevent_sleep,
+        )
+
+
+def _run(
+    *,
+    video: Path,
+    songs: Path,
+    song_files: list[Path],
+    output_path: Path,
+    seed: int | None,
+    normalize: bool,
+    identify: bool,
+    allow_unmatched: bool,
+    preset: str,
+    crf: int,
+    hw_encode: bool | None,
+    prevent_sleep: bool,
+) -> None:
     song_names: dict[Path, str] = {path: path.stem for path in song_files}
     if identify:
         api_key = get_api_key()
@@ -197,7 +236,6 @@ def main(
                 )
             song_files = matched_files
 
-    output_path = output or video.with_name(f"{video.stem}_mixed{video.suffix}")
     use_hw = hw_encode if hw_encode is not None else sys.platform == "darwin"
     encoder = "VideoToolbox" if use_hw else f"x264 · {preset} · crf {crf}"
     labels = label_mode_name()
@@ -218,6 +256,7 @@ def main(
         identify=identify,
         encoder=encoder,
         label_mode=labels,
+        prevent_sleep=prevent_sleep,
     )
     console.print()
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -53,6 +54,7 @@ def print_run_summary(
     identify: bool,
     encoder: str,
     label_mode: str,
+    prevent_sleep: bool = False,
 ) -> None:
     table = Table(
         title="Run",
@@ -72,6 +74,8 @@ def print_run_summary(
     table.add_row("Labels", label_mode)
     table.add_row("Identify", "on" if identify else "off")
     table.add_row("Normalize", "on" if normalize else "off")
+    if prevent_sleep and sys.platform == "darwin":
+        table.add_row("Sleep", "[dim]prevented (caffeinate)[/dim]")
     if seed is not None:
         table.add_row("Seed", str(seed))
 
