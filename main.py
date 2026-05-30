@@ -22,6 +22,7 @@ from cli_ui import (
     task,
 )
 from prevent_sleep import default_prevent_sleep, prevent_system_sleep
+from media_probe import resolve_video_bitrate
 from video_render import render_video_with_overlays, set_ffmpeg_binaries
 
 app = typer.Typer(
@@ -153,7 +154,7 @@ def main(
         20,
         min=0,
         max=51,
-        help="x264 quality; lower is better. Ignored with --hw-encode.",
+        help="x264 quality; lower is better. Ignored with --hw-encode or --bitrate.",
         rich_help_panel="Encoding",
     ),
     hw_encode: bool | None = typer.Option(
@@ -173,6 +174,12 @@ def main(
         "--scale",
         min=144,
         help="Scale output to this height in pixels (e.g. 1080 for 4K sources)",
+        rich_help_panel="Encoding",
+    ),
+    bitrate: str | None = typer.Option(
+        None,
+        "--bitrate",
+        help="Target video bitrate (e.g. 8M, 5000k) or auto to match ~90% of input",
         rich_help_panel="Encoding",
     ),
     prevent_sleep: bool = typer.Option(
@@ -221,8 +228,27 @@ def main(
             crf=crf,
             hw_encode=hw_encode,
             scale=scale,
+            bitrate=bitrate,
             prevent_sleep=prevent_sleep,
         )
+
+
+def _encoder_label(
+    *,
+    use_hw: bool,
+    preset: str,
+    crf: int,
+    video_bitrate: str | None,
+) -> str:
+    if use_hw:
+        label = "VideoToolbox"
+    else:
+        label = f"x264 · {preset}"
+        if video_bitrate is None:
+            label += f" · crf {crf}"
+    if video_bitrate is not None:
+        label += f" · {video_bitrate}"
+    return label
 
 
 def _run(
@@ -241,9 +267,22 @@ def _run(
     crf: int,
     hw_encode: bool | None,
     scale: int | None,
+    bitrate: str | None,
     prevent_sleep: bool,
 ) -> None:
     run_start = time.perf_counter()
+    resolved_bitrate: str | None = None
+    bitrate_display: str | None = None
+    if bitrate is not None:
+        try:
+            resolved_bitrate = resolve_video_bitrate(video, bitrate)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        if bitrate.lower() == "auto":
+            bitrate_display = f"auto → {resolved_bitrate}"
+        else:
+            bitrate_display = resolved_bitrate
+
     song_names: dict[Path, str] = {path: path.stem for path in song_files}
     if identify:
         api_key = get_api_key()
@@ -275,7 +314,12 @@ def _run(
             song_files = matched_files
 
     use_hw = hw_encode if hw_encode is not None else sys.platform == "darwin"
-    encoder = "VideoToolbox" if use_hw else f"x264 · {preset} · crf {crf}"
+    encoder = _encoder_label(
+        use_hw=use_hw,
+        preset=preset,
+        crf=crf,
+        video_bitrate=bitrate_display or resolved_bitrate,
+    )
     labels = label_mode_name()
     note_png_fallback()
 
@@ -297,6 +341,7 @@ def _run(
         encoder=encoder,
         label_mode=labels,
         scale=scale,
+        video_bitrate=bitrate_display,
         prevent_sleep=prevent_sleep,
     )
     console.print()
@@ -333,6 +378,7 @@ def _run(
                 crf=crf,
                 hw_encode=hw_encode,
                 scale_height=scale,
+                video_bitrate=resolved_bitrate,
                 quiet=True,
             )
     finally:
@@ -352,4 +398,10 @@ def _run(
 
 
 if __name__ == "__main__":
-    app()
+    if len(sys.argv) > 1 and sys.argv[1] == "probe":
+        from probe import app as probe_app
+
+        sys.argv.pop(1)
+        probe_app()
+    else:
+        app()

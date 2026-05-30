@@ -110,8 +110,10 @@ uv run python main.py VIDEO SONGS_DIR [OPTIONS]
 | `--identify` / `--no-identify` | AcoustID names for labels and logs (default: on) |
 | `--allow-unmatched` | Include songs AcoustID could not match (default: **excluded** when identifying) |
 | `--preset TEXT` | x264 preset when not using hardware encode: `ultrafast`, `veryfast`, `fast`, `medium`, `slow` (default: `veryfast`) |
-| `--crf INTEGER` | x264 quality 0–51; lower is better (default: `20`). Ignored with `--hw-encode`. |
+| `--crf INTEGER` | x264 quality 0–51; lower is better (default: `20`). Ignored with `--hw-encode` or `--bitrate`. |
+| `--bitrate TEXT` | Target **video** bitrate, e.g. `8M` or `5000k`, or `auto` to match ~90% of the input video stream (overrides quality-based encoding) |
 | `--hw-encode` / `--no-hw-encode` | H.264 via VideoToolbox (default: **on** on macOS, **off** elsewhere) |
+| `--scale INTEGER` | Scale output to this height in pixels (e.g. `1080` for 4K sources) |
 | `--ffmpeg PATH` | Path to `ffmpeg` (alternative to `FFMPEG_BINARY`) |
 | `--prevent-sleep` / `--no-prevent-sleep` | Keep macOS awake during processing via `caffeinate` (default: **on** on macOS) |
 
@@ -135,6 +137,15 @@ uv run python main.py my-video.mp4 ./songs --normalize --target-lufs -14
 
 # Fastest software encode (Linux or without VideoToolbox)
 uv run python main.py my-video.mp4 ./songs --no-hw-encode --preset ultrafast --crf 23
+
+# Match input file size (~90% of source video bitrate)
+uv run python main.py my-video.mp4 ./songs --bitrate auto
+
+# Cap output size explicitly (good for 1080p; ~600 MB video per 10 minutes at 8M)
+uv run python main.py my-video.mp4 ./songs --bitrate 8M
+
+# Smaller 4K output: scale down and cap bitrate
+uv run python main.py my-video.mp4 ./songs --scale 1080 --bitrate 6M
 ```
 
 ### Volume matching
@@ -157,12 +168,48 @@ Title rendering picks the best method your FFmpeg supports:
 
 | Method | When | Notes |
 |--------|------|--------|
-| **`drawtext`** | Full FFmpeg build (e.g. Homebrew `ffmpeg-full`) | Fastest; used automatically if available |
-| **PNG + `overlay`** | `drawtext` missing (e.g. Homebrew `ffmpeg` formula) | Labels rendered with Pillow; message printed to stderr |
+| **ASS subtitles** | Full FFmpeg build with `libass` (e.g. Homebrew `ffmpeg-full`) | Fastest for many tracks; preferred when available |
+| **`drawtext`** | Full FFmpeg build without `libass` | One filter per segment |
+| **PNG + `overlay`** | Neither filter available (e.g. Homebrew `ffmpeg` formula) | Labels rendered with Pillow; slowest |
 
 On macOS, **VideoToolbox** (`--hw-encode`, default) is usually much faster than software x264. For software encoding, prefer `--preset veryfast` or `ultrafast`; lower `--crf` improves quality but takes longer.
 
 Re-encoding is required to embed titles; the original video stream cannot be copied unchanged.
+
+### Output file size and `--bitrate`
+
+By default, the encoder targets **quality**, not file size. On macOS that means VideoToolbox at a fixed quality level; the output can be **much larger** than the input—especially when the source is **HEVC (H.265)** and the output is **H.264**.
+
+Use **`--bitrate`** to cap the **video** stream size instead:
+
+| Value | Meaning |
+|-------|---------|
+| `auto` | Probe the input video bitrate and target **90%** of it |
+| `8M` | ~8 megabits per second (≈ 600 MB video per 10 minutes) |
+| `5000k` | ~5 megabits per second (≈ 375 MB video per 10 minutes) |
+
+**Notes:**
+
+- `--bitrate` overrides quality settings (`-q:v` / `--crf`) for the video stream.
+- Audio is separate (playlist AAC); total file size ≈ video bitrate + audio + container overhead.
+- Lower bitrate → smaller file, more compression artifacts (especially around burned-in titles).
+- Encode time stays about the same; bitrate mainly affects size and quality, not speed.
+- H.264 at the same bitrate as HEVC may look slightly softer; bump `--bitrate` if needed.
+
+Check an input file’s bitrate with the built-in probe command:
+
+```bash
+uv run python main.py probe INPUT.mp4
+uv run python main.py probe INPUT.mp4 --json
+```
+
+Or run `probe.py` directly:
+
+```bash
+uv run python probe.py INPUT.mp4
+```
+
+The probe output includes a **Suggested --bitrate auto** value you can use when mixing.
 
 ### Prevent sleep (macOS)
 
@@ -221,12 +268,26 @@ brew install chromaprint
 
 Or use `--no-identify`.
 
+## Probe a video
+
+Inspect codec, resolution, duration, and bitrates before mixing:
+
+```bash
+uv run python main.py probe my-video.mp4
+uv run python main.py probe my-video.mp4 --json
+```
+
+Use the same `--ffmpeg` / `FFMPEG_BINARY` settings as the mix command. JSON output is useful for scripts.
+
 ## Project layout
 
 | Path | Description |
 |------|-------------|
-| `main.py` | CLI entry point |
+| `main.py` | CLI entry point (mix + `probe` subcommand) |
+| `probe.py` | Standalone probe CLI |
 | `cli_ui.py` | Rich terminal UI (tables, progress, panels) |
-| `video_render.py` | FFmpeg encode, `drawtext` / PNG overlay |
+| `ffmpeg_binaries.py` | Resolve `ffmpeg` / `ffprobe` paths |
+| `media_probe.py` | ffprobe helpers (`VideoProbe`, bitrate formatting) |
+| `video_render.py` | FFmpeg encode, ASS / drawtext / PNG overlay |
 | `acoustid_lookup.py` | AcoustID client and `.acoustid` cache |
 | `.acoustid/` | Cached identification results (gitignored) |

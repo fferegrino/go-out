@@ -17,6 +17,8 @@ from rich.text import Text
 
 from acoustid_lookup import SongMatch
 from audio_normalize import DEFAULT_TARGET_LUFS
+from ffmpeg_binaries import ffprobe_binary
+from media_probe import VideoProbe, format_file_size, format_human_bitrate
 from video_render import ffmpeg_binary, label_render_mode
 
 console = Console()
@@ -60,6 +62,7 @@ def print_run_summary(
     encoder: str,
     label_mode: str,
     scale: int | None = None,
+    video_bitrate: str | None = None,
     prevent_sleep: bool = False,
 ) -> None:
     table = Table(
@@ -78,6 +81,8 @@ def print_run_summary(
     table.add_row("FFmpeg", ffmpeg_binary())
     table.add_row("Encoder", encoder)
     table.add_row("Labels", label_mode)
+    if video_bitrate is not None:
+        table.add_row("Bitrate", video_bitrate)
     if scale is not None:
         table.add_row("Scale", f"{scale}p height")
     table.add_row("Identify", "on" if identify else "off")
@@ -92,6 +97,49 @@ def print_run_summary(
         table.add_row("Sleep", "[dim]prevented (caffeinate)[/dim]")
     if seed is not None:
         table.add_row("Seed", str(seed))
+
+    console.print(table)
+
+
+def print_probe_results(probe: VideoProbe) -> None:
+    table = Table(
+        title="Media probe",
+        box=box.ROUNDED,
+        show_header=False,
+        padding=(0, 1),
+    )
+    table.add_column("Field", style="dim", no_wrap=True)
+    table.add_column("Value")
+
+    table.add_row("File", str(probe.path))
+    table.add_row("Size", format_file_size(probe.file_size))
+    table.add_row("Duration", format_duration(probe.duration))
+    table.add_row("Resolution", probe.resolution)
+    table.add_row("Video codec", probe.codec)
+    table.add_row(
+        "Video bitrate",
+        format_human_bitrate(probe.video_bitrate_bps),
+    )
+    table.add_row(
+        "Estimated video bitrate",
+        format_human_bitrate(probe.estimated_video_bitrate_bps),
+    )
+    table.add_row(
+        "Container bitrate",
+        format_human_bitrate(probe.format_bitrate_bps),
+    )
+    if probe.audio_codec:
+        table.add_row("Audio codec", probe.audio_codec)
+        table.add_row(
+            "Audio bitrate",
+            format_human_bitrate(probe.audio_bitrate_bps),
+        )
+    table.add_row("FFprobe", ffprobe_binary())
+    if probe.suggested_auto_bitrate:
+        table.add_row(
+            "Suggested --bitrate auto",
+            f"[cyan]{probe.suggested_auto_bitrate}[/cyan]",
+        )
 
     console.print(table)
 

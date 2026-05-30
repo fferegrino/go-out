@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -12,72 +9,35 @@ from functools import lru_cache
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
-from moviepy.config import FFMPEG_BINARY
 from moviepy.tools import ffmpeg_escape_filename, subprocess_call
 
-_cli_ffmpeg: str | None = None
-_cli_ffprobe: str | None = None
+from ffmpeg_binaries import ffmpeg_binary, ffprobe_binary, set_ffmpeg_binaries as _set_ffmpeg_binaries
+from media_probe import probe_video_size, resolve_video_bitrate
+
+__all__ = [
+    "ffmpeg_binary",
+    "ffprobe_binary",
+    "format_ffmpeg_bitrate",
+    "has_drawtext_filter",
+    "has_subtitles_filter",
+    "label_render_mode",
+    "probe_video_height",
+    "probe_video_size",
+    "render_video_with_overlays",
+    "resolve_video_bitrate",
+    "set_ffmpeg_binaries",
+]
+
+from media_probe import format_ffmpeg_bitrate  # re-export for callers
 
 
 def set_ffmpeg_binaries(
     ffmpeg: Path | str | None = None,
     ffprobe: Path | str | None = None,
 ) -> None:
-    """Set ffmpeg/ffprobe paths from CLI args or environment variables.
-
-    Priority when resolving (see ``ffmpeg_binary`` / ``ffprobe_binary``):
-    1. Explicit CLI values passed here
-    2. ``FFMPEG_BINARY`` / ``FFPROBE_BINARY`` environment variables
-    3. ``ffmpeg`` / ``ffprobe`` on ``PATH``
-    """
-    global _cli_ffmpeg, _cli_ffprobe
-
-    if ffmpeg is not None:
-        _cli_ffmpeg = str(ffmpeg)
-    elif os.environ.get("FFMPEG_BINARY"):
-        _cli_ffmpeg = os.environ["FFMPEG_BINARY"]
-
-    if ffprobe is not None:
-        _cli_ffprobe = str(ffprobe)
-    elif os.environ.get("FFPROBE_BINARY"):
-        _cli_ffprobe = os.environ["FFPROBE_BINARY"]
-    elif _cli_ffmpeg:
-        sibling = Path(_cli_ffmpeg).with_name("ffprobe")
-        if sibling.is_file():
-            _cli_ffprobe = str(sibling)
-
+    _set_ffmpeg_binaries(ffmpeg=ffmpeg, ffprobe=ffprobe)
     has_drawtext_filter.cache_clear()
     has_subtitles_filter.cache_clear()
-
-
-def _pick_binary(
-    cli_override: str | None,
-    env_var: str,
-    path_name: str,
-    moviepy_default: str,
-) -> str:
-    candidates = [
-        cli_override,
-        os.environ.get(env_var),
-        shutil.which(path_name),
-    ]
-    if moviepy_default not in (path_name, "unset") and Path(moviepy_default).is_file():
-        candidates.append(moviepy_default)
-
-    for candidate in candidates:
-        if not candidate:
-            continue
-        if candidate == path_name or Path(candidate).is_file():
-            return candidate
-    return path_name
-
-
-def ffmpeg_binary() -> str:
-    return _pick_binary(_cli_ffmpeg, "FFMPEG_BINARY", "ffmpeg", FFMPEG_BINARY)
-
-
-def ffprobe_binary() -> str:
-    return _pick_binary(_cli_ffprobe, "FFPROBE_BINARY", "ffprobe", "ffprobe")
 
 
 def _ffmpeg_filters() -> str:
@@ -101,26 +61,6 @@ def has_drawtext_filter() -> bool:
 @lru_cache(maxsize=1)
 def has_subtitles_filter() -> bool:
     return " subtitles " in f" {_ffmpeg_filters()} "
-
-
-def probe_video_size(path: Path) -> tuple[int, int]:
-    output = subprocess.check_output(
-        [
-            ffprobe_binary(),
-            "-v",
-            "quiet",
-            "-print_format",
-            "json",
-            "-show_entries",
-            "stream=width,height",
-            "-select_streams",
-            "v:0",
-            str(path),
-        ],
-        text=True,
-    )
-    stream = json.loads(output)["streams"][0]
-    return int(stream["width"]), int(stream["height"])
 
 
 def probe_video_height(path: Path) -> int:
@@ -368,9 +308,16 @@ def _hwaccel_args() -> list[str]:
     return []
 
 
-def _append_video_encoder(cmd: list[str], *, use_hw: bool, preset: str, crf: int) -> None:
+def _append_video_encoder(
+    cmd: list[str],
+    *,
+    use_hw: bool,
+    preset: str,
+    crf: int,
+    bitrate: str | None = None,
+) -> None:
     if use_hw:
-        cmd.extend(["-c:v", "h264_videotoolbox", "-q:v", "65"])
+        cmd.extend(["-c:v", "h264_videotoolbox"])
     else:
         cmd.extend(
             [
@@ -378,12 +325,17 @@ def _append_video_encoder(cmd: list[str], *, use_hw: bool, preset: str, crf: int
                 "libx264",
                 "-preset",
                 preset,
-                "-crf",
-                str(crf),
                 "-threads",
                 "0",
             ]
         )
+
+    if bitrate:
+        cmd.extend(["-b:v", bitrate])
+    elif use_hw:
+        cmd.extend(["-q:v", "65"])
+    else:
+        cmd.extend(["-crf", str(crf)])
 
 
 def _append_audio_codec(cmd: list[str], *, copy_audio: bool) -> None:
@@ -409,6 +361,7 @@ def _render_with_ass(
     use_hw: bool,
     preset: str,
     crf: int,
+    bitrate: str | None,
     copy_audio: bool,
     quiet: bool,
 ) -> None:
@@ -440,7 +393,9 @@ def _render_with_ass(
             "1:a:0",
             "-shortest",
         ]
-        _append_video_encoder(cmd, use_hw=use_hw, preset=preset, crf=crf)
+        _append_video_encoder(
+            cmd, use_hw=use_hw, preset=preset, crf=crf, bitrate=bitrate
+        )
         _append_audio_codec(cmd, copy_audio=copy_audio)
         cmd.append(ffmpeg_escape_filename(str(output_path)))
         subprocess_call(cmd, logger=None if quiet else "bar")
@@ -457,6 +412,7 @@ def _render_with_drawtext(
     use_hw: bool,
     preset: str,
     crf: int,
+    bitrate: str | None,
     copy_audio: bool,
     quiet: bool,
 ) -> None:
@@ -479,7 +435,9 @@ def _render_with_drawtext(
         "1:a:0",
         "-shortest",
     ]
-    _append_video_encoder(cmd, use_hw=use_hw, preset=preset, crf=crf)
+    _append_video_encoder(
+        cmd, use_hw=use_hw, preset=preset, crf=crf, bitrate=bitrate
+    )
     _append_audio_codec(cmd, copy_audio=copy_audio)
     cmd.append(ffmpeg_escape_filename(str(output_path)))
     subprocess_call(cmd, logger=None if quiet else "bar")
@@ -496,6 +454,7 @@ def _render_with_png_overlays(
     use_hw: bool,
     preset: str,
     crf: int,
+    bitrate: str | None,
     copy_audio: bool,
     quiet: bool,
 ) -> None:
@@ -550,7 +509,9 @@ def _render_with_png_overlays(
                 "-shortest",
             ]
         )
-        _append_video_encoder(cmd, use_hw=use_hw, preset=preset, crf=crf)
+        _append_video_encoder(
+            cmd, use_hw=use_hw, preset=preset, crf=crf, bitrate=bitrate
+        )
         _append_audio_codec(cmd, copy_audio=copy_audio)
         cmd.append(ffmpeg_escape_filename(str(output_path)))
         subprocess_call(cmd, logger=None if quiet else "bar")
@@ -566,6 +527,7 @@ def render_video_with_overlays(
     crf: int = 20,
     hw_encode: bool | None = None,
     scale_height: int | None = None,
+    video_bitrate: str | None = None,
     copy_audio: bool = True,
     quiet: bool = False,
 ) -> None:
@@ -589,6 +551,7 @@ def render_video_with_overlays(
             use_hw=use_hw,
             preset=preset,
             crf=crf,
+            bitrate=video_bitrate,
             copy_audio=copy_audio,
             quiet=quiet,
         )
@@ -603,6 +566,7 @@ def render_video_with_overlays(
             use_hw=use_hw,
             preset=preset,
             crf=crf,
+            bitrate=video_bitrate,
             copy_audio=copy_audio,
             quiet=quiet,
         )
@@ -617,6 +581,7 @@ def render_video_with_overlays(
             use_hw=use_hw,
             preset=preset,
             crf=crf,
+            bitrate=video_bitrate,
             copy_audio=copy_audio,
             quiet=quiet,
         )
