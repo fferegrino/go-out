@@ -1,6 +1,6 @@
 # go-out
 
-Build a video with a randomised soundtrack: songs from a folder are shuffled, concatenated to match the video length, and merged with the original video. The video stream is copied without re-encoding so picture quality stays the same.
+Build a video with a randomised soundtrack: songs from a folder are shuffled, concatenated to match the video length, and merged with the original video. The current song title is burned into the top-left corner and updates as each track plays.
 
 ## Requirements
 
@@ -92,7 +92,7 @@ uv run python main.py my-video.mp4 ./songs --normalize --no-identify
 2. Optionally identify each song (AcoustID + `.acoustid` cache).
 3. Shuffle songs and append them until the total audio length matches the video (re-shuffle and continue if the folder is shorter than the video).
 4. Trim the last song if needed.
-5. Write a temporary AAC audio track and merge it with the video using FFmpeg (`-c:v copy`).
+5. Render the final file with the playlist audio and a top-left title overlay (white text, dark semi-transparent background). Video is re-encoded with H.264 (`crf 18`) so the text is part of the picture.
 
 ## Project layout
 

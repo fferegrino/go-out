@@ -1,15 +1,26 @@
 import random
-import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import typer
-from moviepy import AudioFileClip, VideoFileClip, afx, concatenate_audioclips
-from moviepy.config import FFMPEG_BINARY
-from moviepy.tools import ffmpeg_escape_filename, subprocess_call
+from moviepy import (
+    AudioFileClip,
+    CompositeVideoClip,
+    TextClip,
+    VideoFileClip,
+    afx,
+    concatenate_audioclips,
+)
 
 from acoustid_lookup import format_song_name, get_api_key, identify_songs
 
 app = typer.Typer()
+
+
+@dataclass(frozen=True)
+class PlaylistSegment:
+    label: str
+    duration: float
 
 
 def build_playlist(
@@ -17,13 +28,14 @@ def build_playlist(
     target_duration: float,
     *,
     normalize: bool = False,
-    song_names: dict[Path, str] | None = None,
-) -> tuple[AudioFileClip, list[AudioFileClip]]:
+    song_names: dict[Path, str],
+) -> tuple[AudioFileClip, list[AudioFileClip], list[PlaylistSegment]]:
     """Shuffle songs and collect clips whose total duration matches the target."""
     playlist = song_files.copy()
     random.shuffle(playlist)
 
     clips: list[AudioFileClip] = []
+    segments: list[PlaylistSegment] = []
     remaining = target_duration
     index = 0
 
@@ -34,8 +46,8 @@ def build_playlist(
         song_path = playlist[index % len(playlist)]
         clip = AudioFileClip(str(song_path))
         index += 1
-        if song_names is not None:
-            typer.echo(f"  + {song_names.get(song_path, song_path.name)}")
+        label = song_names.get(song_path, song_path.name)
+        typer.echo(f"  + {label}")
         if normalize:
             clip = clip.with_effects([afx.AudioNormalize()])
 
@@ -43,33 +55,66 @@ def build_playlist(
             clips.append(clip)
             remaining -= clip.duration
         else:
-            clips.append(clip.subclipped(0, remaining))
+            clip = clip.subclipped(0, remaining)
+            clips.append(clip)
             remaining = 0
 
-    return concatenate_audioclips(clips), clips
+        segments.append(PlaylistSegment(label=label, duration=clip.duration))
+
+    return concatenate_audioclips(clips), clips, segments
 
 
-def merge_video_audio(video_path: Path, audio_path: Path, output_path: Path) -> None:
-    """Merge video and audio, copying the video stream without re-encoding."""
-    cmd = [
-        FFMPEG_BINARY,
-        "-y",
-        "-i",
-        ffmpeg_escape_filename(str(video_path)),
-        "-i",
-        ffmpeg_escape_filename(str(audio_path)),
-        "-map",
-        "0:v:0",
-        "-map",
-        "1:a:0",
-        "-c:v",
-        "copy",
-        "-c:a",
-        "aac",
-        "-shortest",
-        ffmpeg_escape_filename(str(output_path)),
-    ]
-    subprocess_call(cmd, logger="bar")
+def render_video_with_overlays(
+    video_path: Path,
+    audio: AudioFileClip,
+    segments: list[PlaylistSegment],
+    output_path: Path,
+) -> None:
+    """Burn song titles into the video and attach the playlist audio."""
+    video = VideoFileClip(str(video_path))
+    text_clips: list[TextClip] = []
+    final = None
+
+    try:
+        _, height = video.size
+        font_size = max(24, height // 28)
+        margin = max(12, height // 48)
+
+        start = 0.0
+        for segment in segments:
+            text = TextClip(
+                text=segment.label,
+                font_size=font_size,
+                color="white",
+                stroke_color="black",
+                stroke_width=2,
+                bg_color=(0, 0, 0, 180),
+                method="label",
+            )
+            text = (
+                text.with_duration(segment.duration)
+                .with_start(start)
+                .with_position((margin, margin))
+            )
+            text_clips.append(text)
+            start += segment.duration
+
+        final = CompositeVideoClip([video, *text_clips], use_bgclip=True)
+        final = final.with_duration(video.duration).with_audio(audio)
+        final.write_videofile(
+            str(output_path),
+            codec="libx264",
+            audio_codec="aac",
+            preset="medium",
+            ffmpeg_params=["-crf", "18"],
+            logger="bar",
+        )
+    finally:
+        if final is not None:
+            final.close()
+        for text in text_clips:
+            text.close()
+        video.close()
 
 
 @app.command()
@@ -106,7 +151,7 @@ def main(
     if not song_files:
         raise typer.BadParameter(f"No .mp4 files found in {songs}")
 
-    song_names: dict[Path, str] = {path: path.name for path in song_files}
+    song_names: dict[Path, str] = {path: path.stem for path in song_files}
     if identify:
         api_key = get_api_key()
         typer.echo("Identifying songs (cached in .acoustid/)...")
@@ -124,29 +169,20 @@ def main(
     typer.echo(f"Video duration: {target_duration:.2f}s")
     typer.echo(f"Found {len(song_files)} songs, randomising order...")
 
-    playlist, source_clips = build_playlist(
+    playlist, source_clips, segments = build_playlist(
         song_files,
         target_duration,
         normalize=normalize,
-        song_names=song_names if identify else None,
+        song_names=song_names,
     )
-    tmp_audio: Path | None = None
 
     try:
-        with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp:
-            tmp_audio = Path(tmp.name)
-
-        typer.echo("Writing concatenated audio...")
-        playlist.write_audiofile(str(tmp_audio), codec="aac", logger="bar")
-
-        typer.echo(f"Merging into {output_path} (video stream copied, no re-encode)...")
-        merge_video_audio(video, tmp_audio, output_path)
+        typer.echo(f"Rendering {output_path} with song titles...")
+        render_video_with_overlays(video, playlist, segments, output_path)
     finally:
         playlist.close()
         for clip in source_clips:
             clip.close()
-        if tmp_audio is not None and tmp_audio.exists():
-            tmp_audio.unlink()
 
     typer.echo("Done!")
 
