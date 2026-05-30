@@ -103,6 +103,8 @@ uv run python main.py VIDEO SONGS_DIR [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `-o`, `--output PATH` | Output path (default: `{video_stem}_mixed.{ext}` beside the input) |
+| `--trim-start SECS` | Skip this many seconds from the start of the input video (default: `0`) |
+| `--trim-end SECS` | Skip this many seconds from the end of the input video (default: `0`) |
 | `--seed INTEGER` | Random seed for the same song order on every run |
 | `--normalize` / `--no-normalize` | Match volume across songs (default: off) |
 | `--normalize-mode` | `loudness` (LUFS, recommended) or `peak` |
@@ -125,6 +127,9 @@ uv run python main.py my-video.mp4 ./songs
 
 # Same playlist every time, custom output path
 uv run python main.py my-video.mp4 ./songs --seed 42 -o ~/Movies/output.mp4
+
+# Drop 5s from the start and 10s from the end
+uv run python main.py my-video.mp4 ./songs --trim-start 5 --trim-end 10
 
 # Matched loudness across songs (recommended for uneven volumes)
 uv run python main.py my-video.mp4 ./songs --normalize
@@ -223,7 +228,7 @@ caffeinate -dims uv run python main.py my-video.mp4 ./songs
 
 ## How it works
 
-1. Read the input video duration.
+1. Read the input video duration (after any `--trim-start` / `--trim-end`).
 2. Optionally identify each song (AcoustID + `.acoustid` cache).
 3. Shuffle songs and append until audio length matches the video (re-shuffle and continue if the folder is shorter than the video).
 4. Trim the last song if needed.

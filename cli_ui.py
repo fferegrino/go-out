@@ -63,6 +63,9 @@ def print_run_summary(
     label_mode: str,
     scale: int | None = None,
     video_bitrate: str | None = None,
+    source_duration: float | None = None,
+    trim_start: float = 0.0,
+    trim_end: float = 0.0,
     prevent_sleep: bool = False,
 ) -> None:
     table = Table(
@@ -77,7 +80,16 @@ def print_run_summary(
     table.add_row("Video", str(video))
     table.add_row("Songs", f"{songs_dir} [dim]({song_count} tracks)[/dim]")
     table.add_row("Output", str(output))
+    if source_duration is not None:
+        table.add_row("Source duration", format_duration(source_duration))
     table.add_row("Duration", format_duration(video_duration))
+    if trim_start > 0 or trim_end > 0:
+        parts: list[str] = []
+        if trim_start > 0:
+            parts.append(f"{format_duration(trim_start)} start")
+        if trim_end > 0:
+            parts.append(f"{format_duration(trim_end)} end")
+        table.add_row("Trim", " · ".join(parts))
     table.add_row("FFmpeg", ffmpeg_binary())
     table.add_row("Encoder", encoder)
     table.add_row("Labels", label_mode)

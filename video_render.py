@@ -308,6 +308,22 @@ def _hwaccel_args() -> list[str]:
     return []
 
 
+def _video_input_args(
+    video_path: Path,
+    *,
+    trim_start: float = 0.0,
+    trim_duration: float | None = None,
+) -> list[str]:
+    """Build ffmpeg input args for the source video, optionally trimmed."""
+    args: list[str] = []
+    if trim_start > 0:
+        args.extend(["-ss", f"{trim_start:.3f}"])
+    args.extend(["-i", ffmpeg_escape_filename(str(video_path))])
+    if trim_duration is not None:
+        args.extend(["-t", f"{trim_duration:.3f}"])
+    return args
+
+
 def _append_video_encoder(
     cmd: list[str],
     *,
@@ -362,6 +378,8 @@ def _render_with_ass(
     preset: str,
     crf: int,
     bitrate: str | None,
+    trim_start: float,
+    trim_duration: float | None,
     copy_audio: bool,
     quiet: bool,
 ) -> None:
@@ -378,8 +396,11 @@ def _render_with_ass(
             ffmpeg_binary(),
             "-y",
             *_hwaccel_args(),
-            "-i",
-            ffmpeg_escape_filename(str(video_path)),
+            *_video_input_args(
+                video_path,
+                trim_start=trim_start,
+                trim_duration=trim_duration,
+            ),
             "-i",
             ffmpeg_escape_filename(str(audio_path)),
             "-vf",
@@ -413,6 +434,8 @@ def _render_with_drawtext(
     preset: str,
     crf: int,
     bitrate: str | None,
+    trim_start: float,
+    trim_duration: float | None,
     copy_audio: bool,
     quiet: bool,
 ) -> None:
@@ -420,8 +443,11 @@ def _render_with_drawtext(
         ffmpeg_binary(),
         "-y",
         *_hwaccel_args(),
-        "-i",
-        ffmpeg_escape_filename(str(video_path)),
+        *_video_input_args(
+            video_path,
+            trim_start=trim_start,
+            trim_duration=trim_duration,
+        ),
         "-i",
         ffmpeg_escape_filename(str(audio_path)),
         "-vf",
@@ -455,6 +481,8 @@ def _render_with_png_overlays(
     preset: str,
     crf: int,
     bitrate: str | None,
+    trim_start: float,
+    trim_duration: float | None,
     copy_audio: bool,
     quiet: bool,
 ) -> None:
@@ -483,8 +511,11 @@ def _render_with_png_overlays(
             ffmpeg_binary(),
             "-y",
             *_hwaccel_args(),
-            "-i",
-            ffmpeg_escape_filename(str(video_path)),
+            *_video_input_args(
+                video_path,
+                trim_start=trim_start,
+                trim_duration=trim_duration,
+            ),
             "-i",
             ffmpeg_escape_filename(str(audio_path)),
         ]
@@ -528,6 +559,8 @@ def render_video_with_overlays(
     hw_encode: bool | None = None,
     scale_height: int | None = None,
     video_bitrate: str | None = None,
+    trim_start: float = 0.0,
+    trim_duration: float | None = None,
     copy_audio: bool = True,
     quiet: bool = False,
 ) -> None:
@@ -552,6 +585,8 @@ def render_video_with_overlays(
             preset=preset,
             crf=crf,
             bitrate=video_bitrate,
+            trim_start=trim_start,
+            trim_duration=trim_duration,
             copy_audio=copy_audio,
             quiet=quiet,
         )
@@ -567,6 +602,8 @@ def render_video_with_overlays(
             preset=preset,
             crf=crf,
             bitrate=video_bitrate,
+            trim_start=trim_start,
+            trim_duration=trim_duration,
             copy_audio=copy_audio,
             quiet=quiet,
         )
@@ -582,6 +619,8 @@ def render_video_with_overlays(
             preset=preset,
             crf=crf,
             bitrate=video_bitrate,
+            trim_start=trim_start,
+            trim_duration=trim_duration,
             copy_audio=copy_audio,
             quiet=quiet,
         )

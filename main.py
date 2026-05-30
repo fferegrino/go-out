@@ -110,6 +110,20 @@ def main(
         help="Output video path",
         rich_help_panel="Output",
     ),
+    trim_start: float = typer.Option(
+        0.0,
+        "--trim-start",
+        min=0.0,
+        help="Skip this many seconds from the start of the input video",
+        rich_help_panel="Inputs",
+    ),
+    trim_end: float = typer.Option(
+        0.0,
+        "--trim-end",
+        min=0.0,
+        help="Skip this many seconds from the end of the input video",
+        rich_help_panel="Inputs",
+    ),
     seed: int | None = typer.Option(
         None,
         help="Random seed for reproducible song order",
@@ -229,6 +243,8 @@ def main(
             hw_encode=hw_encode,
             scale=scale,
             bitrate=bitrate,
+            trim_start=trim_start,
+            trim_end=trim_end,
             prevent_sleep=prevent_sleep,
         )
 
@@ -268,6 +284,8 @@ def _run(
     hw_encode: bool | None,
     scale: int | None,
     bitrate: str | None,
+    trim_start: float,
+    trim_end: float,
     prevent_sleep: bool,
 ) -> None:
     run_start = time.perf_counter()
@@ -325,13 +343,24 @@ def _run(
 
     with task("Reading video…"):
         with VideoFileClip(str(video)) as video_clip:
-            target_duration = video_clip.duration
+            source_duration = video_clip.duration
+
+    if trim_start + trim_end >= source_duration - 0.01:
+        raise typer.BadParameter(
+            f"--trim-start ({trim_start}s) + --trim-end ({trim_end}s) "
+            f"removes the entire video ({source_duration:.1f}s)."
+        )
+    target_duration = source_duration - trim_start - trim_end
+    render_trim_duration = target_duration if trim_start > 0 or trim_end > 0 else None
 
     print_run_summary(
         video=video,
         songs_dir=songs,
         output=output_path,
         video_duration=target_duration,
+        source_duration=source_duration if trim_start > 0 or trim_end > 0 else None,
+        trim_start=trim_start,
+        trim_end=trim_end,
         song_count=len(song_files),
         seed=seed,
         normalize=normalize,
@@ -379,6 +408,8 @@ def _run(
                 hw_encode=hw_encode,
                 scale_height=scale,
                 video_bitrate=resolved_bitrate,
+                trim_start=trim_start,
+                trim_duration=render_trim_duration,
                 quiet=True,
             )
     finally:
