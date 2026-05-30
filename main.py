@@ -5,9 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import typer
-from moviepy import AudioFileClip, VideoFileClip, afx, concatenate_audioclips
+from moviepy import AudioFileClip, VideoFileClip, concatenate_audioclips
 
 from acoustid_lookup import SongMatch, format_song_name, get_api_key, identify_songs
+from audio_normalize import DEFAULT_TARGET_LUFS, NormalizeMode, normalize_clip
 from cli_ui import (
     console,
     label_mode_name,
@@ -31,6 +32,7 @@ app = typer.Typer(
 )
 
 ENCODE_PRESETS = ("ultrafast", "veryfast", "fast", "medium", "slow")
+NORMALIZE_MODES = ("loudness", "peak")
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,8 @@ def build_playlist(
     target_duration: float,
     *,
     normalize: bool = False,
+    normalize_mode: NormalizeMode = "loudness",
+    target_lufs: float = DEFAULT_TARGET_LUFS,
     song_names: dict[Path, str],
 ) -> tuple[AudioFileClip, list[AudioFileClip], list[PlaylistSegment]]:
     """Shuffle songs and collect clips whose total duration matches the target."""
@@ -64,7 +68,9 @@ def build_playlist(
         index += 1
         label = song_names.get(song_path, song_path.name)
         if normalize:
-            clip = clip.with_effects([afx.AudioNormalize()])
+            clip = normalize_clip(
+                clip, mode=normalize_mode, target_lufs=target_lufs
+            )
 
         if clip.duration <= remaining:
             clips.append(clip)
@@ -110,7 +116,19 @@ def main(
     normalize: bool = typer.Option(
         False,
         "--normalize/--no-normalize",
-        help="Peak-normalise each song so the loudest sample is at 0 dB",
+        help="Match volume across songs (default method: loudness / LUFS)",
+        rich_help_panel="Playlist",
+    ),
+    normalize_mode: str = typer.Option(
+        "loudness",
+        "--normalize-mode",
+        help="Volume matching: loudness (LUFS, recommended) or peak",
+        rich_help_panel="Playlist",
+    ),
+    target_lufs: float = typer.Option(
+        DEFAULT_TARGET_LUFS,
+        "--target-lufs",
+        help="Target integrated loudness in LUFS when using loudness mode",
         rich_help_panel="Playlist",
     ),
     identify: bool = typer.Option(
@@ -149,6 +167,13 @@ def main(
         help="Path to ffmpeg binary (or set FFMPEG_BINARY)",
         rich_help_panel="Encoding",
     ),
+    scale: int | None = typer.Option(
+        None,
+        "--scale",
+        min=144,
+        help="Scale output to this height in pixels (e.g. 1080 for 4K sources)",
+        rich_help_panel="Encoding",
+    ),
     prevent_sleep: bool = typer.Option(
         default_prevent_sleep(),
         "--prevent-sleep/--no-prevent-sleep",
@@ -167,6 +192,11 @@ def main(
     if preset not in ENCODE_PRESETS:
         raise typer.BadParameter(f"preset must be one of: {', '.join(ENCODE_PRESETS)}")
 
+    if normalize_mode not in NORMALIZE_MODES:
+        raise typer.BadParameter(
+            f"normalize-mode must be one of: {', '.join(NORMALIZE_MODES)}"
+        )
+
     song_files = sorted(songs.glob("*.mp4"))
     if not song_files:
         raise typer.BadParameter(f"No .mp4 files found in {songs}")
@@ -182,11 +212,14 @@ def main(
             output_path=output or video.with_name(f"{video.stem}_mixed{video.suffix}"),
             seed=seed,
             normalize=normalize,
+            normalize_mode=normalize_mode,  # type: ignore[arg-type]
+            target_lufs=target_lufs,
             identify=identify,
             allow_unmatched=allow_unmatched,
             preset=preset,
             crf=crf,
             hw_encode=hw_encode,
+            scale=scale,
             prevent_sleep=prevent_sleep,
         )
 
@@ -199,11 +232,14 @@ def _run(
     output_path: Path,
     seed: int | None,
     normalize: bool,
+    normalize_mode: NormalizeMode,
+    target_lufs: float,
     identify: bool,
     allow_unmatched: bool,
     preset: str,
     crf: int,
     hw_encode: bool | None,
+    scale: int | None,
     prevent_sleep: bool,
 ) -> None:
     song_names: dict[Path, str] = {path: path.stem for path in song_files}
@@ -253,9 +289,12 @@ def _run(
         song_count=len(song_files),
         seed=seed,
         normalize=normalize,
+        normalize_mode=normalize_mode,
+        target_lufs=target_lufs,
         identify=identify,
         encoder=encoder,
         label_mode=labels,
+        scale=scale,
         prevent_sleep=prevent_sleep,
     )
     console.print()
@@ -265,6 +304,8 @@ def _run(
             song_files,
             target_duration,
             normalize=normalize,
+            normalize_mode=normalize_mode,
+            target_lufs=target_lufs,
             song_names=song_names,
         )
 
@@ -289,6 +330,7 @@ def _run(
                 preset=preset,
                 crf=crf,
                 hw_encode=hw_encode,
+                scale_height=scale,
                 quiet=True,
             )
     finally:

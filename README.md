@@ -104,7 +104,9 @@ uv run python main.py VIDEO SONGS_DIR [OPTIONS]
 |--------|-------------|
 | `-o`, `--output PATH` | Output path (default: `{video_stem}_mixed.{ext}` beside the input) |
 | `--seed INTEGER` | Random seed for the same song order on every run |
-| `--normalize` / `--no-normalize` | Peak-normalise each song before concatenation (default: off) |
+| `--normalize` / `--no-normalize` | Match volume across songs (default: off) |
+| `--normalize-mode` | `loudness` (LUFS, recommended) or `peak` |
+| `--target-lufs` | Target loudness in LUFS for loudness mode (default: `-16`) |
 | `--identify` / `--no-identify` | AcoustID names for labels and logs (default: on) |
 | `--allow-unmatched` | Include songs AcoustID could not match (default: **excluded** when identifying) |
 | `--preset TEXT` | x264 preset when not using hardware encode: `ultrafast`, `veryfast`, `fast`, `medium`, `slow` (default: `veryfast`) |
@@ -122,12 +124,29 @@ uv run python main.py my-video.mp4 ./songs
 # Same playlist every time, custom output path
 uv run python main.py my-video.mp4 ./songs --seed 42 -o ~/Movies/output.mp4
 
-# Louder-matched songs, file names only (no AcoustID)
-uv run python main.py my-video.mp4 ./songs --normalize --no-identify
+# Matched loudness across songs (recommended for uneven volumes)
+uv run python main.py my-video.mp4 ./songs --normalize
+
+# Stricter peak matching (old behaviour; less even perceived loudness)
+uv run python main.py my-video.mp4 ./songs --normalize --normalize-mode peak
+
+# Louder or quieter target (-16 LUFS is a common streaming default)
+uv run python main.py my-video.mp4 ./songs --normalize --target-lufs -14
 
 # Fastest software encode (Linux or without VideoToolbox)
 uv run python main.py my-video.mp4 ./songs --no-hw-encode --preset ultrafast --crf 23
 ```
+
+### Volume matching
+
+Songs from different sources often differ in loudness. Use **`--normalize`** to level them before concatenation:
+
+| Mode | Flag | What it does |
+|------|------|----------------|
+| **Loudness** (default) | `--normalize` | Matches **perceived** loudness to `--target-lufs` (default **-16 LUFS**, common for streaming) |
+| **Peak** | `--normalize --normalize-mode peak` | Scales each track so its loudest sample hits 0 dB; quick but uneven across genres |
+
+Loudness mode uses [pyloudnorm](https://github.com/csteinmetz1/pyloudnorm) (EBU R128-style integrated loudness). Each full track is measured before trimming, so the gain is based on the whole song.
 
 ## Rendering and speed
 

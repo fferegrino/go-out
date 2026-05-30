@@ -14,7 +14,8 @@ from rich.table import Table
 from rich.text import Text
 
 from acoustid_lookup import SongMatch
-from video_render import ffmpeg_binary, has_drawtext_filter
+from audio_normalize import DEFAULT_TARGET_LUFS
+from video_render import ffmpeg_binary, label_render_mode
 
 console = Console()
 err_console = Console(stderr=True)
@@ -51,9 +52,12 @@ def print_run_summary(
     song_count: int,
     seed: int | None,
     normalize: bool,
+    normalize_mode: str = "loudness",
+    target_lufs: float = DEFAULT_TARGET_LUFS,
     identify: bool,
     encoder: str,
     label_mode: str,
+    scale: int | None = None,
     prevent_sleep: bool = False,
 ) -> None:
     table = Table(
@@ -72,8 +76,16 @@ def print_run_summary(
     table.add_row("FFmpeg", ffmpeg_binary())
     table.add_row("Encoder", encoder)
     table.add_row("Labels", label_mode)
+    if scale is not None:
+        table.add_row("Scale", f"{scale}p height")
     table.add_row("Identify", "on" if identify else "off")
-    table.add_row("Normalize", "on" if normalize else "off")
+    if normalize:
+        if normalize_mode == "loudness":
+            table.add_row("Normalize", f"loudness · {target_lufs:.0f} LUFS")
+        else:
+            table.add_row("Normalize", "peak")
+    else:
+        table.add_row("Normalize", "off")
     if prevent_sleep and sys.platform == "darwin":
         table.add_row("Sleep", "[dim]prevented (caffeinate)[/dim]")
     if seed is not None:
@@ -166,13 +178,18 @@ def print_done(
 
 
 def label_mode_name() -> str:
-    return "drawtext" if has_drawtext_filter() else "PNG overlay"
+    return {
+        "ass": "ASS subtitles",
+        "drawtext": "drawtext",
+        "png": "PNG overlay",
+    }[label_render_mode()]
 
 
 def note_png_fallback() -> None:
-    if not has_drawtext_filter():
+    if label_render_mode() == "png":
         err_console.print(
-            "[yellow]Note:[/yellow] ffmpeg has no drawtext filter; using PNG overlays."
+            "[yellow]Note:[/yellow] ffmpeg has no ASS or drawtext filters; "
+            "using PNG overlays (slow). Install [bold]ffmpeg-full[/bold]."
         )
 
 
