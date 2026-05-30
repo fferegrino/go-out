@@ -71,7 +71,7 @@ uv run python main.py video.mp4 ./songs \
 
 ## AcoustID (song identification)
 
-By default, each `.mp4` in the songs folder is identified via the [AcoustID](https://acoustid.org/) API. Matched **artist** and **title** are used in the log, on-screen labels, and playlist output. **Unmatched files are excluded** from the playlist unless you pass `--allow-unmatched`.
+By default, each `.mp4` in the songs folder is identified via the [AcoustID](https://acoustid.org/) API (**`--identify` is on by default**). Matched **artist** and **title** are used in the log, on-screen labels, and playlist output. **Unmatched files are excluded** from the playlist unless you pass `--allow-unmatched`.
 
 AcoustID is **free for non-commercial** use. Commercial use requires a license from [AcoustID OÜ](https://acoustid.biz/).
 
@@ -93,6 +93,16 @@ uv run python main.py my-video.mp4 ./songs --no-identify
 uv run python main.py VIDEO SONGS_DIR [OPTIONS]
 ```
 
+A basic run uses these **defaults** (no flags needed):
+
+| Setting | Default |
+|---------|---------|
+| Song identification | **on** (`--identify`) — AcoustID artist/title labels |
+| Volume matching | **on** (`--normalize`) at **-12 LUFS** |
+| Video bitrate | **`auto`** — ~90% of the input video stream |
+
+To opt out: `--no-identify`, `--no-normalize`, `--target-lufs -16`, or `--bitrate off` (quality-based encode, often larger files).
+
 **Arguments**
 
 - `VIDEO` — Input video file
@@ -106,14 +116,14 @@ uv run python main.py VIDEO SONGS_DIR [OPTIONS]
 | `--trim-start SECS` | Skip this many seconds from the start of the input video (default: `0`) |
 | `--trim-end SECS` | Skip this many seconds from the end of the input video (default: `0`) |
 | `--seed INTEGER` | Random seed for the same song order on every run |
-| `--normalize` / `--no-normalize` | Match volume across songs (default: off) |
+| `--normalize` / `--no-normalize` | Match volume across songs (default: **on**) |
 | `--normalize-mode` | `loudness` (LUFS, recommended) or `peak` |
-| `--target-lufs` | Target loudness in LUFS for loudness mode (default: `-16`) |
-| `--identify` / `--no-identify` | AcoustID names for labels and logs (default: on) |
+| `--target-lufs` | Target loudness in LUFS for loudness mode (default: **-12**) |
+| `--identify` / `--no-identify` | AcoustID names for labels and logs (default: **on**) |
 | `--allow-unmatched` | Include songs AcoustID could not match (default: **excluded** when identifying) |
 | `--preset TEXT` | x264 preset when not using hardware encode: `ultrafast`, `veryfast`, `fast`, `medium`, `slow` (default: `veryfast`) |
-| `--crf INTEGER` | x264 quality 0–51; lower is better (default: `20`). Ignored with `--hw-encode` or `--bitrate`. |
-| `--bitrate TEXT` | Target **video** bitrate, e.g. `8M` or `5000k`, or `auto` to match ~90% of the input video stream (overrides quality-based encoding) |
+| `--crf INTEGER` | x264 quality 0–51; lower is better (default: `20`). Ignored with `--hw-encode` or `--bitrate` (except `off`). |
+| `--bitrate TEXT` | Target **video** bitrate: `auto` (default), e.g. `8M` / `5000k`, or `off` for quality-based encoding |
 | `--hw-encode` / `--no-hw-encode` | H.264 via VideoToolbox (default: **on** on macOS, **off** elsewhere) |
 | `--scale INTEGER` | Scale output to this height in pixels (e.g. `1080` for 4K sources) |
 | `--ffmpeg PATH` | Path to `ffmpeg` (alternative to `FFMPEG_BINARY`) |
@@ -122,7 +132,7 @@ uv run python main.py VIDEO SONGS_DIR [OPTIONS]
 **Examples**
 
 ```bash
-# Basic run
+# Basic run (identify + normalize @ -12 LUFS + --bitrate auto)
 uv run python main.py my-video.mp4 ./songs
 
 # Same playlist every time, custom output path
@@ -131,20 +141,18 @@ uv run python main.py my-video.mp4 ./songs --seed 42 -o ~/Movies/output.mp4
 # Drop 5s from the start and 10s from the end
 uv run python main.py my-video.mp4 ./songs --trim-start 5 --trim-end 10
 
-# Matched loudness across songs (recommended for uneven volumes)
-uv run python main.py my-video.mp4 ./songs --normalize
+# Skip volume matching or use a quieter streaming target
+uv run python main.py my-video.mp4 ./songs --no-normalize
+uv run python main.py my-video.mp4 ./songs --target-lufs -16
 
-# Stricter peak matching (old behaviour; less even perceived loudness)
+# Stricter peak matching (less even perceived loudness)
 uv run python main.py my-video.mp4 ./songs --normalize --normalize-mode peak
-
-# Louder or quieter target (-16 LUFS is a common streaming default)
-uv run python main.py my-video.mp4 ./songs --normalize --target-lufs -14
 
 # Fastest software encode (Linux or without VideoToolbox)
 uv run python main.py my-video.mp4 ./songs --no-hw-encode --preset ultrafast --crf 23
 
-# Match input file size (~90% of source video bitrate)
-uv run python main.py my-video.mp4 ./songs --bitrate auto
+# Quality-based video encode (no bitrate cap; often larger than input)
+uv run python main.py my-video.mp4 ./songs --bitrate off
 
 # Cap output size explicitly (good for 1080p; ~600 MB video per 10 minutes at 8M)
 uv run python main.py my-video.mp4 ./songs --bitrate 8M
@@ -155,18 +163,20 @@ uv run python main.py my-video.mp4 ./songs --scale 1080 --bitrate 6M
 
 ### Volume matching
 
-Songs from different sources often differ in loudness. Use **`--normalize`** to level them before concatenation:
+Volume matching is **on by default** (`--normalize`). Songs from different sources often differ in loudness; normalization levels them before concatenation:
 
 | Mode | Flag | What it does |
 |------|------|----------------|
-| **Loudness** (default) | `--normalize` | Matches **perceived** loudness to `--target-lufs` (default **-16 LUFS**, common for streaming) |
+| **Loudness** (default) | `--normalize` | Matches **perceived** loudness to `--target-lufs` (default **-12 LUFS**) |
 | **Peak** | `--normalize --normalize-mode peak` | Scales each track so its loudest sample hits 0 dB; quick but uneven across genres |
+
+Use **`--no-normalize`** to skip volume matching. **-16 LUFS** is a common streaming target if you want something quieter: `--target-lufs -16`.
 
 Loudness mode uses [pyloudnorm](https://github.com/csteinmetz1/pyloudnorm) (EBU R128-style integrated loudness). Each full track is measured before trimming, so the gain is based on the whole song.
 
 ## Rendering and speed
 
-1. **Playlist audio** — MoviePy concatenates (and optionally normalises) the shuffled songs to match the video length.
+1. **Playlist audio** — MoviePy concatenates and normalises (by default) the shuffled songs to match the video length.
 2. **Final video** — One FFmpeg pass muxes that audio with the video and burns in timed titles.
 
 Title rendering picks the best method your FFmpeg supports:
@@ -183,15 +193,16 @@ Re-encoding is required to embed titles; the original video stream cannot be cop
 
 ### Output file size and `--bitrate`
 
-By default, the encoder targets **quality**, not file size. On macOS that means VideoToolbox at a fixed quality level; the output can be **much larger** than the input—especially when the source is **HEVC (H.265)** and the output is **H.264**.
+By default, **`--bitrate auto`** probes the input and targets ~**90%** of its video stream bitrate—keeping output size close to the source. This overrides quality-based encoding (`-q:v` / `--crf`).
 
-Use **`--bitrate`** to cap the **video** stream size instead:
+Use an explicit cap or disable bitrate targeting:
 
 | Value | Meaning |
 |-------|---------|
-| `auto` | Probe the input video bitrate and target **90%** of it |
+| `auto` | **Default.** Probe the input video bitrate and target **90%** of it |
 | `8M` | ~8 megabits per second (≈ 600 MB video per 10 minutes) |
 | `5000k` | ~5 megabits per second (≈ 375 MB video per 10 minutes) |
+| `off` | Quality-based encode (VideoToolbox / CRF); output can be **much larger** than the input, especially from HEVC sources |
 
 **Notes:**
 
@@ -229,7 +240,7 @@ caffeinate -dims uv run python main.py my-video.mp4 ./songs
 ## How it works
 
 1. Read the input video duration (after any `--trim-start` / `--trim-end`).
-2. Optionally identify each song (AcoustID + `.acoustid` cache).
+2. Identify each song via AcoustID (unless `--no-identify`) and cache in `.acoustid/`.
 3. Shuffle songs and append until audio length matches the video (re-shuffle and continue if the folder is shorter than the video).
 4. Trim the last song if needed.
 5. Write playlist audio to a temporary file.

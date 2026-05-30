@@ -130,7 +130,7 @@ def main(
         rich_help_panel="Playlist",
     ),
     normalize: bool = typer.Option(
-        False,
+        True,
         "--normalize/--no-normalize",
         help="Match volume across songs (default method: loudness / LUFS)",
         rich_help_panel="Playlist",
@@ -144,7 +144,7 @@ def main(
     target_lufs: float = typer.Option(
         DEFAULT_TARGET_LUFS,
         "--target-lufs",
-        help="Target integrated loudness in LUFS when using loudness mode",
+        help="Target integrated loudness in LUFS when using loudness mode (default: -12)",
         rich_help_panel="Playlist",
     ),
     identify: bool = typer.Option(
@@ -190,10 +190,10 @@ def main(
         help="Scale output to this height in pixels (e.g. 1080 for 4K sources)",
         rich_help_panel="Encoding",
     ),
-    bitrate: str | None = typer.Option(
-        None,
+    bitrate: str = typer.Option(
+        "auto",
         "--bitrate",
-        help="Target video bitrate (e.g. 8M, 5000k) or auto to match ~90% of input",
+        help="Video bitrate (e.g. 8M, 5000k), auto (~90% of input), or off for quality-based encode",
         rich_help_panel="Encoding",
     ),
     prevent_sleep: bool = typer.Option(
@@ -283,7 +283,7 @@ def _run(
     crf: int,
     hw_encode: bool | None,
     scale: int | None,
-    bitrate: str | None,
+    bitrate: str,
     trim_start: float,
     trim_end: float,
     prevent_sleep: bool,
@@ -291,7 +291,7 @@ def _run(
     run_start = time.perf_counter()
     resolved_bitrate: str | None = None
     bitrate_display: str | None = None
-    if bitrate is not None:
+    if bitrate.lower() != "off":
         try:
             resolved_bitrate = resolve_video_bitrate(video, bitrate)
         except ValueError as exc:

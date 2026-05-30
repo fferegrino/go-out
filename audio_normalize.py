@@ -9,7 +9,7 @@ import pyloudnorm as pyln
 from moviepy import AudioArrayClip, AudioFileClip, afx
 
 NormalizeMode = Literal["loudness", "peak"]
-DEFAULT_TARGET_LUFS = -16.0
+DEFAULT_TARGET_LUFS = -12.0
 
 
 def normalize_clip(
